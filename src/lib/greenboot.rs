@@ -170,13 +170,28 @@ fn run_scripts(name: &str, path: &str, disabled_scripts: Option<&[String]>) -> S
 mod test {
     use super::*;
     use anyhow::{Context, Result};
-    use std::fs;
+    use std::fs::File;
+    use std::io::Write;
+    use std::sync::Once;
+    use std::{fs, os::unix::fs::PermissionsExt};
+
+    static INIT: Once = Once::new();
+
+    fn init_logger() {
+        INIT.call_once(|| {
+            env_logger::builder().is_test(true).try_init().ok();
+        });
+    }
 
     static GREENBOOT_INSTALL_PATHS: [&str; 2] = ["/usr/lib/greenboot", "/etc/greenboot"];
 
     /// validate when the required folder is not found
     #[test]
     fn missing_required_folder() {
+        let required_path = format!("{}/check/required.d", GREENBOOT_INSTALL_PATHS[1]);
+        if Path::new(&required_path).exists() {
+            fs::remove_dir_all(&required_path).unwrap();
+        }
         assert_eq!(
             run_diagnostics(vec![]).unwrap_err().to_string(),
             String::from("cannot find any required.d folder")
@@ -194,13 +209,102 @@ mod test {
     }
 
     #[test]
-    fn test_failed_diagnostics() {
-        setup_folder_structure(false)
-            .context("Test setup failed")
+    fn test_required_script_failure_exit_early() {
+        init_logger();
+        setup_folder_structure_for_test_required_script_failure_counter().expect("setup failed");
+
+        let base_path = GREENBOOT_INSTALL_PATHS[1];
+        let counter_file = format!("{}/fail_counter.txt", base_path);
+
+        let result = run_diagnostics(vec![]);
+        log::debug!("Diagnostics result: {:?}", result);
+
+        assert!(result.is_err());
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "health-check failed, skipping remaining scripts"
+        );
+
+        log::info!("Health check failed as expected.");
+
+        let fail_script_count = fs::read_to_string(counter_file)
+            .unwrap()
+            .trim()
+            .parse::<u32>()
             .unwrap();
-        let failed_msg = run_diagnostics(vec![]).unwrap_err().to_string();
-        assert_eq!(failed_msg, String::from("health-check failed!"));
-        tear_down().context("Test teardown failed").unwrap();
+        assert_eq!(
+            fail_script_count, 1,
+            "Only one failing script should have executed"
+        );
+
+        tear_down_setup_exit_early().expect("teardown failed");
+    }
+
+    fn setup_folder_structure_for_test_required_script_failure_counter() -> Result<()> {
+        let base_path = GREENBOOT_INSTALL_PATHS[1];
+        let required_path = format!("{}/check/required.d", base_path);
+        fs::create_dir_all(&required_path)?;
+
+        let passing_script = "testing_assets/passing_script.sh";
+        let failing_script = "testing_assets/failing_script.sh";
+
+        // Counter file for tracking execution
+        let counter_file = format!("{}/fail_counter.txt", base_path);
+        let mut file = File::create(&counter_file)?;
+        writeln!(file, "0")?;
+
+        // add two passing scripts
+        for name in ["00_pass", "01_pass"].iter() {
+            let dest = format!("{}/{}.sh", required_path, name);
+            fs::copy(passing_script, &dest)?;
+            fs::set_permissions(&dest, fs::Permissions::from_mode(0o755))?;
+        }
+
+        // add two failing scripts with counter logic
+        for name in ["10_fail", "20_fail"] {
+            let dest = format!("{}/{}.sh", required_path, name);
+            let original = fs::read_to_string(failing_script)?;
+            let script = format!(
+                "#!/bin/bash\nCOUNTER_FILE=\"{}/fail_counter.txt\"\ncount=$(cat $COUNTER_FILE)\necho $((count + 1)) >| $COUNTER_FILE\n{}",
+                base_path, original
+            );
+            let mut f = File::create(&dest)?;
+            f.write_all(script.as_bytes())?;
+            fs::set_permissions(&dest, fs::Permissions::from_mode(0o755))?;
+        }
+
+        Ok(())
+    }
+
+    fn tear_down_setup_exit_early() -> Result<()> {
+        use std::fs;
+        use std::path::Path;
+
+        let base_path = GREENBOOT_INSTALL_PATHS[1];
+        let counter_file = format!("{}/fail_counter.txt", base_path);
+        let required_dir = format!("{}/check/required.d", base_path);
+        let check_dir = format!("{}/check", base_path);
+
+        if Path::new(&counter_file).exists() {
+            fs::remove_file(&counter_file)?;
+        }
+
+        if Path::new(&required_dir).exists() {
+            for entry in fs::read_dir(&required_dir)? {
+                let entry = entry?;
+                let path = entry.path();
+                if path.is_file() {
+                    fs::remove_file(path)?;
+                }
+            }
+            fs::remove_dir(&required_dir)?;
+        }
+
+        if Path::new(&check_dir).exists() && fs::read_dir(&check_dir)?.next().is_none() {
+            fs::remove_dir(&check_dir)?;
+        }
+
+        Ok(())
     }
 
     #[test]
