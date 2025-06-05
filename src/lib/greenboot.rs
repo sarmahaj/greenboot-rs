@@ -8,9 +8,9 @@ use std::process::Command;
 /// dir that greenboot looks for the health check and other scripts
 static GREENBOOT_INSTALL_PATHS: [&str; 2] = ["/usr/lib/greenboot", "/etc/greenboot"];
 
-/// runs all the scripts in required.d and wanted.d
+/// run required.d and wanted.d scripts.
+/// If a required script fails, log the error, and skip remaining checks.
 pub fn run_diagnostics(skipped: Vec<String>) -> Result<Vec<String>> {
-    let mut required_script_failure = false;
     let mut path_exists = false;
     let mut all_skipped = HashSet::new();
 
@@ -31,7 +31,7 @@ pub fn run_diagnostics(skipped: Vec<String>) -> Result<Vec<String>> {
         if !result.errors.is_empty() {
             log::error!("required script error:");
             result.errors.iter().for_each(|e| log::error!("{e}"));
-            required_script_failure = true;
+            bail!("health-check failed, skipping remaining scripts");
         }
     }
 
@@ -64,9 +64,6 @@ pub fn run_diagnostics(skipped: Vec<String>) -> Result<Vec<String>> {
         );
     }
 
-    if required_script_failure {
-        bail!("health-check failed!");
-    }
     Ok(missing_disabled)
 }
 
@@ -153,9 +150,15 @@ fn run_scripts(name: &str, path: &str, disabled_scripts: Option<&[String]>) -> S
                     std::io::ErrorKind::Other,
                     error_msg,
                 )));
+                if name == "required" {
+                    break;
+                }
             }
             Err(e) => {
                 result.errors.push(Box::new(e));
+                if name == "required" {
+                    break;
+                }
             }
         }
     }
