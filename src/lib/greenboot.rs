@@ -146,10 +146,9 @@ fn run_scripts(name: &str, path: &str, disabled_scripts: Option<&[String]>) -> S
                     String::from_utf8_lossy(&o.stdout),
                     String::from_utf8_lossy(&o.stderr)
                 );
-                result.errors.push(Box::new(std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    error_msg,
-                )));
+                result
+                    .errors
+                    .push(Box::new(std::io::Error::other(error_msg)));
                 if name == "required" {
                     break;
                 }
