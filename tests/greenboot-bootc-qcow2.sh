@@ -27,6 +27,7 @@ if [[ -n "${TARGET_DISTRO:-}" ]]; then
 fi
 
 # Setup variables
+ARCH=$(uname -m)
 TEST_UUID=qcow2-$((1 + RANDOM % 1000000))
 TEMPDIR=$(mktemp -d)
 GUEST_ADDRESS=192.168.100.50
@@ -74,10 +75,27 @@ case "${ID}-${VERSION_ID}" in
         BIB_URL="registry.stage.redhat.io/rhel9/bootc-image-builder:9.8"
         BOOT_ARGS="uefi"
         COPR_CHROOT="centos-stream-9-${ARCH}"
+        { set +x; } 2>/dev/null
         sed -i "s/REPLACE_ME_HERE/${DOWNLOAD_NODE}/g" files/rhel-9-8.repo
+        sed -i "s/REPLACE_ARCH_HERE/${ARCH}/g" files/rhel-9-8.repo
         if [[ "${USE_COMPOSE_RPMS}" == true ]]; then
-            GREENBOOT_PACKAGES_URL="https://${DOWNLOAD_NODE}/rhel-9/composes/RHEL-9/${COMPOSE_ID}/compose/AppStream/x86_64/os/Packages/"
+            GREENBOOT_PACKAGES_URL="https://${DOWNLOAD_NODE}/rhel-9/composes/RHEL-9/${COMPOSE_ID}/compose/AppStream/${ARCH}/os/Packages/"
         fi
+        set -x
+        ;;
+    "rhel-9.9")
+        OS_VARIANT="rhel9-unknown"
+        BASE_IMAGE_URL="registry.stage.redhat.io/rhel9/rhel-bootc:9.9"
+        BIB_URL="registry.stage.redhat.io/rhel9/bootc-image-builder:9.9"
+        BOOT_ARGS="uefi"
+        COPR_CHROOT="centos-stream-9-${ARCH}"
+        { set +x; } 2>/dev/null
+        sed -i "s/REPLACE_ME_HERE/${DOWNLOAD_NODE}/g" files/rhel-9-9.repo
+        sed -i "s/REPLACE_ARCH_HERE/${ARCH}/g" files/rhel-9-9.repo
+        if [[ "${USE_COMPOSE_RPMS}" == true ]]; then
+            GREENBOOT_PACKAGES_URL="https://${DOWNLOAD_NODE}/rhel-9/composes/RHEL-9/${COMPOSE_ID}/compose/AppStream/${ARCH}/os/Packages/"
+        fi
+        set -x
         ;;
     "rhel-10.2")
         OS_VARIANT="rhel10-unknown"
@@ -85,10 +103,27 @@ case "${ID}-${VERSION_ID}" in
         BIB_URL="registry.stage.redhat.io/rhel10/bootc-image-builder:10.2"
         BOOT_ARGS="uefi"
         COPR_CHROOT="centos-stream-10-${ARCH}"
+        { set +x; } 2>/dev/null
         sed -i "s/REPLACE_ME_HERE/${DOWNLOAD_NODE}/g" files/rhel-10-2.repo
+        sed -i "s/REPLACE_ARCH_HERE/${ARCH}/g" files/rhel-10-2.repo
         if [[ "${USE_COMPOSE_RPMS}" == true ]]; then
-            GREENBOOT_PACKAGES_URL="https://${DOWNLOAD_NODE}/rhel-10/composes/RHEL-10/${COMPOSE_ID}/compose/AppStream/x86_64/os/Packages/"
+            GREENBOOT_PACKAGES_URL="https://${DOWNLOAD_NODE}/rhel-10/composes/RHEL-10/${COMPOSE_ID}/compose/AppStream/${ARCH}/os/Packages/"
         fi
+        set -x
+        ;;
+    "rhel-10.3")
+        OS_VARIANT="rhel10-unknown"
+        BASE_IMAGE_URL="registry.stage.redhat.io/rhel10/rhel-bootc:10.3"
+        BIB_URL="registry.stage.redhat.io/rhel10/bootc-image-builder:10.3"
+        BOOT_ARGS="uefi"
+        COPR_CHROOT="centos-stream-10-${ARCH}"
+        { set +x; } 2>/dev/null
+        sed -i "s/REPLACE_ME_HERE/${DOWNLOAD_NODE}/g" files/rhel-10-3.repo
+        sed -i "s/REPLACE_ARCH_HERE/${ARCH}/g" files/rhel-10-3.repo
+        if [[ "${USE_COMPOSE_RPMS}" == true ]]; then
+            GREENBOOT_PACKAGES_URL="https://${DOWNLOAD_NODE}/rhel-10/composes/RHEL-10/${COMPOSE_ID}/compose/AppStream/${ARCH}/os/Packages/"
+        fi
+        set -x
         ;;
     *)
         echo "unsupported distro: ${ID}-${VERSION_ID}"
@@ -250,9 +285,19 @@ case "${ID}-${VERSION_ID}" in
 COPY files/rhel-9-8.repo /etc/yum.repos.d/rhel-9-8.repo
 EOF
         ;;
+    "rhel-9.9")
+        tee -a Containerfile > /dev/null << EOF
+COPY files/rhel-9-9.repo /etc/yum.repos.d/rhel-9-9.repo
+EOF
+        ;;
     "rhel-10.2")
         tee -a Containerfile > /dev/null << EOF
 COPY files/rhel-10-2.repo /etc/yum.repos.d/rhel-10-2.repo
+EOF
+        ;;
+    "rhel-10.3")
+        tee -a Containerfile > /dev/null << EOF
+COPY files/rhel-10-3.repo /etc/yum.repos.d/rhel-10-3.repo
 EOF
         ;;
 esac
