@@ -44,7 +44,6 @@ SSH_USER="admin"
 OS_NAME="rhel-edge"
 IMAGE_TYPE=edge-commit
 PROD_REPO_URL=http://192.168.100.1/repo
-CONSOLE_LOG=/tmp/vm-console.log
 
 # Set up temporary files.
 TEMPDIR=$(mktemp -d)
@@ -65,7 +64,7 @@ sudo localectl set-locale LANG=en_US.UTF-8
 
 # Install required packages
 greenprint "Install required packages"
-sudo dnf install -y --nogpgcheck httpd osbuild osbuild-composer composer-cli ansible-core podman qemu-img firewalld qemu-kvm libvirt-client libvirt-daemon-kvm libvirt-daemon virt-install lorax gobject-introspection
+sudo dnf install -y --nogpgcheck httpd osbuild osbuild-composer composer-cli ansible-core createrepo_c podman qemu-img firewalld qemu-kvm libvirt-client libvirt-daemon-kvm libvirt-daemon virt-install rpmdevtools cargo lorax gobject-introspection make rpm-build rust-toolset
 
 # Avoid collection installation filed sometime
 for _ in $(seq 0 30); do
@@ -77,86 +76,37 @@ for _ in $(seq 0 30); do
     sleep 10
 done
 
-# RPM acquisition mode:
-#   If DOWNLOAD_NODE and COMPOSE_ID are both set -> download from compose
-#   Otherwise -> install greenboot from Copr (default)
-USE_COMPOSE_RPMS=false
-if [[ -n "${DOWNLOAD_NODE:-}" && -n "${COMPOSE_ID:-}" ]]; then
-    USE_COMPOSE_RPMS=true
-fi
-GREENBOOT_PACKAGES_URL=""
-# PR_NUMBER is only needed for the Copr path; default it so `set -u` doesn't
-# crash when running in compose-RPM mode without it set.
-PR_NUMBER="${PR_NUMBER:-}"
-
-# Unlike Fedora IoT / CentOS Stream Edge, RHEL nightly composes don't ship any
-# enabled repos in the resulting ostree commit. Without a repo baked into the
-# guest, rpm-ostree has nothing to install layered packages from once booted
-# (e.g. "install tree as layered package" fails with "No enabled repositories").
-# The bootc tests solve this via `COPY files/rhel-9-9.repo /etc/yum.repos.d/`
-# in the Containerfile; for ostree the equivalent is a blueprint
-# `[[customizations.repositories]]` entry, which osbuild-composer writes into
-# /etc/yum.repos.d/ inside the built commit. Populated per-distro below; left
-# empty for Fedora/CentOS, which already have working guest repos by default.
-GUEST_REPO_ID=""
-GUEST_REPO_BASEOS_URL=""
-GUEST_REPO_APPSTREAM_URL=""
-
 # Customize repository
 sudo mkdir -p /etc/osbuild-composer/repositories
 
 # Set os-variant and boot location used by virt-install.
 case "${ID}-${VERSION_ID}" in
-    "fedora-"*)
-        OSTREE_REF="fedora/${VERSION_ID}/${ARCH}/iot"
-        OS_NAME="fedora-iot"
-        IMAGE_TYPE=iot-commit
-        OS_VARIANT="fedora-unknown"
-        BOOT_LOCATION="https://dl.fedoraproject.org/pub/fedora/linux/releases/${VERSION_ID}/Everything/${ARCH}/os/"
-        COPR_REPO_URL="https://download.copr.fedorainfracloud.org/results/packit/fedora-iot-greenboot-rs-${PR_NUMBER}/fedora-${VERSION_ID}-${ARCH}/"
-        ;;
     "centos-9")
         OSTREE_REF="centos/9/${ARCH}/edge"
         OS_VARIANT="centos-stream9"
         BOOT_ARGS="uefi,firmware.feature0.name=secure-boot,firmware.feature0.enabled=no"
         CURRENT_COMPOSE_CS9=$(curl -s "https://composes.stream.centos.org/production/" | grep -ioE ">CentOS-Stream-9-.*/<" | tr -d '>/<' | tail -1)
-        BOOT_LOCATION="https://composes.stream.centos.org/production/${CURRENT_COMPOSE_CS9}/compose/BaseOS/${ARCH}/os/"
-        COPR_REPO_URL="https://download.copr.fedorainfracloud.org/results/packit/fedora-iot-greenboot-rs-${PR_NUMBER}/centos-stream-9-${ARCH}/"
+        BOOT_LOCATION="https://composes.stream.centos.org/production/${CURRENT_COMPOSE_CS9}/compose/BaseOS/x86_64/os/"
         sudo cp files/centos-stream-9.json /etc/osbuild-composer/repositories/centos-9.json;;
     "rhel-9.8")
         OSTREE_REF="rhel/9/${ARCH}/edge"
         OS_VARIANT="rhel9-unknown"
-        { set +x; } 2>/dev/null
-        BOOT_LOCATION="http://${DOWNLOAD_NODE}/rhel-9/nightly/RHEL-9/latest-RHEL-9.8.0/compose/BaseOS/${ARCH}/os/"
-        COPR_REPO_URL="https://download.copr.fedorainfracloud.org/results/packit/fedora-iot-greenboot-rs-${PR_NUMBER}/centos-stream-9-${ARCH}/"
-        if [[ "${USE_COMPOSE_RPMS}" == true ]]; then
-            GREENBOOT_PACKAGES_URL="https://${DOWNLOAD_NODE}/rhel-9/composes/RHEL-9/${COMPOSE_ID}/compose/AppStream/${ARCH}/os/Packages/"
-        fi
-        GUEST_REPO_ID="rhel-9-8"
-        GUEST_REPO_BASEOS_URL="${BOOT_LOCATION}"
-        GUEST_REPO_APPSTREAM_URL="${BOOT_LOCATION/BaseOS/AppStream}"
-        sed "s/REPLACE_ME_HERE/${DOWNLOAD_NODE}/g" files/rhel-9-8-0.json | sudo tee /etc/osbuild-composer/repositories/rhel-98.json > /dev/null
-        set -x
-        ;;
-    "rhel-9.9")
-        OSTREE_REF="rhel/9/${ARCH}/edge"
-        OS_VARIANT="rhel9-unknown"
-        { set +x; } 2>/dev/null
-        BOOT_LOCATION="http://${DOWNLOAD_NODE}/rhel-9/nightly/RHEL-9/latest-RHEL-9.9.0/compose/BaseOS/${ARCH}/os/"
-        COPR_REPO_URL="https://download.copr.fedorainfracloud.org/results/packit/fedora-iot-greenboot-rs-${PR_NUMBER}/centos-stream-9-${ARCH}/"
-        if [[ "${USE_COMPOSE_RPMS}" == true ]]; then
-            GREENBOOT_PACKAGES_URL="https://${DOWNLOAD_NODE}/rhel-9/composes/RHEL-9/${COMPOSE_ID}/compose/AppStream/${ARCH}/os/Packages/"
-        fi
-        GUEST_REPO_ID="rhel-9-9"
-        GUEST_REPO_BASEOS_URL="${BOOT_LOCATION}"
-        GUEST_REPO_APPSTREAM_URL="${BOOT_LOCATION/BaseOS/AppStream}"
-        sed "s/REPLACE_ME_HERE/${DOWNLOAD_NODE}/g" files/rhel-9-9-0.json | sudo tee /etc/osbuild-composer/repositories/rhel-99.json > /dev/null
-        set -x
-        ;;
+        BOOT_ARGS="uefi"
+        BOOT_LOCATION="http://${DOWNLOAD_NODE}/rhel-9/nightly/RHEL-9/latest-RHEL-9.8.0/compose/BaseOS/x86_64/os/"
+        sed "s/REPLACE_ME_HERE/${DOWNLOAD_NODE}/g" files/rhel-9-8-0.json | sudo tee /etc/osbuild-composer/repositories/rhel-98.json > /dev/null;;
     *)
         echo "unsupported distro: ${ID}-${VERSION_ID}"
         exit 1;;
 esac
+
+# Build greenboot RPMs
+greenprint "Building greenboot packages"
+pushd .. && \
+make rpm
+mkdir -p /var/www/html/packages
+cp rpmbuild/RPMS/x86_64/*.rpm /var/www/html/packages/
+sudo createrepo_c /var/www/html/packages
+sudo restorecon -Rv /var/www/html/packages && popd
 
 # Check ostree_key permissions
 KEY_PERMISSION_PRE=$(stat -L -c "%a %G %U" key/ostree_key | grep -oP '\d+' | head -n 1)
@@ -174,124 +124,9 @@ sudo systemctl enable --now httpd.service
 greenprint "Start osbuild-composer.socket"
 sudo systemctl enable --now osbuild-composer.socket
 
-if [[ "${USE_COMPOSE_RPMS}" == true && -n "${GREENBOOT_PACKAGES_URL}" ]]; then
-    # Layer in a pre-built greenboot RPM from compose instead of Copr, e.g.
-    # for RHEL targets where Copr only provides a CentOS Stream approximation.
-    greenprint "Downloading greenboot RPMs from compose: ${GREENBOOT_PACKAGES_URL}"
-    sudo dnf install -y --nogpgcheck createrepo_c
-    sudo mkdir -p /var/www/html/packages
-    # /var/www/html is root-owned (created by the httpd package); hand it to
-    # the current user so the unprivileged curl calls in download_compose_rpms
-    # can write into it. restorecon below fixes the SELinux context afterward.
-    sudo chown "$(id -u):$(id -g)" /var/www/html/packages
-    # source: tests/common/download-compose-rpms.sh
-    source "$(dirname "${BASH_SOURCE[0]}")/common/download-compose-rpms.sh"
-    download_compose_rpms "${GREENBOOT_PACKAGES_URL}" "/var/www/html/packages"
-    sudo createrepo_c /var/www/html/packages
-    sudo restorecon -Rv /var/www/html/packages
-    # Register the local repo with osbuild-composer so blueprints depsolve
-    # picks up the compose RPMs instead of falling back to the nightly repo.
-    greenprint "Adding local compose RPM repo as osbuild-composer source"
-    sudo tee /tmp/greenboot-compose.toml > /dev/null << EOF
-id = "greenboot-compose"
-name = "Local compose greenboot RPMs"
-type = "yum-baseurl"
-url = "http://127.0.0.1/packages/"
-check_gpg = false
-check_ssl = false
-EOF
-    compose_source_added=false
-    for _ in $(seq 0 30); do
-        if sudo composer-cli sources add /tmp/greenboot-compose.toml; then
-            compose_source_added=true
-            break
-        fi
-        greenprint "Compose RPM source not ready yet, retrying in 30s..."
-        sleep 30
-    done
-
-    if [ "$compose_source_added" = false ]; then
-        echo "Failed to add compose RPM source after 30 attempts."
-        exit 1
-    fi
-else
-    # Add Copr repo as osbuild-composer source for greenboot PR builds
-    greenprint "Adding Copr source for greenboot PR #${PR_NUMBER}"
-    sudo tee /tmp/greenboot-copr.toml > /dev/null << EOF
-id = "greenboot-copr"
-name = "Packit Copr greenboot PR build"
-type = "yum-baseurl"
-url = "${COPR_REPO_URL}"
-check_gpg = false
-check_ssl = false
-EOF
-    copr_added=false
-    for _ in $(seq 0 30); do
-        if sudo composer-cli sources add /tmp/greenboot-copr.toml; then
-            copr_added=true
-            break
-        fi
-        greenprint "Copr source not ready yet, retrying in 30s..."
-        sleep 30
-    done
-
-    if [ "$copr_added" = false ]; then
-        echo "Failed to add Copr source after 30 attempts."
-        exit 1
-    fi
-fi
-
-# Listing greenboot as a blueprint package (version = "*") is not enough to
-# guarantee it comes from the intended source (Copr or compose): dnf always
-# installs the highest NEVRA across all enabled repos, and Copr snapshot
-# builds conventionally use a Release starting at "0.<timestamp>...", the
-# same convention official pre-GA/rebuilt packages use. Whenever
-# BaseOS/AppStream ships a greenboot release that outranks the build we
-# want, dnf silently installs the stock package instead. Pin the exact
-# version-release dnf resolves in the source repo so there is only one
-# candidate to resolve to, regardless of what other repos offer. (Verified:
-# neither `composer-cli sources add` nor a blueprint's
-# `[[customizations.repositories]]` priority/install_from affect depsolve at
-# build time -- those only shape the .repo files written into the resulting
-# image for its own future dnf use.)
-if [[ "${USE_COMPOSE_RPMS}" == true && -n "${GREENBOOT_PACKAGES_URL}" ]]; then
-    GREENBOOT_NEVR_LOOKUP_URL="http://127.0.0.1/packages/"
-else
-    GREENBOOT_NEVR_LOOKUP_URL="${COPR_REPO_URL}"
-fi
-
-greenprint "Looking up exact greenboot NEVR to pin from ${GREENBOOT_NEVR_LOOKUP_URL}"
-GREENBOOT_NEVR=$(sudo dnf repoquery \
-    --repofrompath="greenboot-nevr-lookup,${GREENBOOT_NEVR_LOOKUP_URL}" \
-    --disablerepo='*' --enablerepo=greenboot-nevr-lookup \
-    --quiet --qf '%{version}-%{release}' --latest-limit=1 greenboot)
-
-if [ -z "$GREENBOOT_NEVR" ]; then
-    echo "Failed to resolve greenboot version-release from repo ${GREENBOOT_NEVR_LOOKUP_URL}"
-    exit 1
-fi
-greenprint "Pinning greenboot to build ${GREENBOOT_NEVR}"
-
 # Start firewalld
 greenprint "Start firewalld"
 sudo systemctl enable --now firewalld
-
-greenprint "Waiting for firewalld D-Bus interface to be ready"
-fw_timeout=30
-fw_elapsed=0
-until sudo firewall-cmd --state >/dev/null 2>&1; do
-    sleep 1
-    fw_elapsed=$((fw_elapsed + 1))
-    if ! systemctl is-active --quiet firewalld; then
-        echo "firewalld systemd unit is not active" >&2
-        sudo systemctl status firewalld --no-pager >&2 || true
-        exit 1
-    fi
-    if [[ ${fw_elapsed} -ge ${fw_timeout} ]]; then
-        echo "firewalld did not become ready after ${fw_timeout} seconds" >&2
-        exit 1
-    fi
-done
 
 # Start libvirtd and test it.
 greenprint "🚀 Starting libvirt daemon"
@@ -381,15 +216,7 @@ build_image() {
     # Prepare the blueprint for the compose.
     greenprint "📋 Preparing blueprint"
     sudo composer-cli blueprints push "$blueprint_file"
-    sudo composer-cli blueprints depsolve "$blueprint_name" | tee /tmp/depsolve-output.txt
-
-    # Verify greenboot is being pulled from Copr (should have PR-specific NVR)
-    greenprint "🔍 Verifying greenboot source"
-    if grep -i "greenboot" /tmp/depsolve-output.txt; then
-        greenprint "✅ greenboot package found in depsolve output"
-    else
-        greenprint "⚠️  greenboot not explicitly in depsolve (may be in base image)"
-    fi
+    sudo composer-cli blueprints depsolve "$blueprint_name"
 
     # Get worker unit file so we can watch the journal.
     WORKER_UNIT=$(sudo systemctl list-units | grep -o -E "osbuild.*worker.*\.service")
@@ -413,13 +240,10 @@ build_image() {
     while true; do
         sudo composer-cli --json compose info "${COMPOSE_ID}" | tee "$COMPOSE_INFO" > /dev/null
 
-        # Handle both v1 (CentOS/RHEL) and v2 (Fedora) API formats
-        COMPOSE_STATUS=$(jq -r '.[].body | (.queue_status // .image_status?.status) | select(. != null)' "$COMPOSE_INFO")
+        COMPOSE_STATUS=$(jq -r '.[0].body.queue_status' "$COMPOSE_INFO")
 
         # Is the compose finished?
-        # v1: RUNNING/WAITING/FINISHED/FAILED  v2: building/pending/success/failure
-        if [[ $COMPOSE_STATUS != RUNNING ]] && [[ $COMPOSE_STATUS != WAITING ]] \
-            && [[ $COMPOSE_STATUS != building ]] && [[ $COMPOSE_STATUS != pending ]]; then
+        if [[ $COMPOSE_STATUS != RUNNING ]] && [[ $COMPOSE_STATUS != WAITING ]]; then
             break
         fi
 
@@ -433,7 +257,7 @@ build_image() {
     get_compose_metadata "$COMPOSE_ID"
 
     # Did the compose finish with success?
-    if [[ $COMPOSE_STATUS != FINISHED ]] && [[ $COMPOSE_STATUS != success ]]; then
+    if [[ $COMPOSE_STATUS != FINISHED ]]; then
         echo "Something went wrong with the compose. 😢"
         exit 1
     fi
@@ -501,16 +325,8 @@ version = "*"
 name = "sssd"
 version = "*"
 
-[[packages]]
-name = "greenboot"
-version = "${GREENBOOT_NEVR}"
-
-[[packages]]
-name = "greenboot-default-health-checks"
-version = "${GREENBOOT_NEVR}"
-
 [customizations.services]
-enabled = ["greenboot-healthcheck.service", "greenboot-set-rollback-trigger.service", "greenboot-success.target"]
+enabled = ["greenboot-set-rollback-trigger.service"]
 
 [[customizations.user]]
 name = "${SSH_USER}"
@@ -520,30 +336,6 @@ key = "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQCzxo5dEcS+LDK/OFAfHo6740EyoDM8aYaCk
 home = "/home/${SSH_USER}/"
 groups = ["wheel"]
 EOF
-
-# For distros with no working guest repos out of the box (see comment near
-# GUEST_REPO_ID above), embed the base repos into the ostree commit so
-# rpm-ostree can install layered packages once the guest is booted.
-if [[ -n "${GUEST_REPO_BASEOS_URL}" ]]; then
-    { set +x; } 2>/dev/null
-    tee -a "$BLUEPRINT_FILE" > /dev/null << EOF
-
-[[customizations.repositories]]
-id = "${GUEST_REPO_ID}-baseos"
-filename = "${GUEST_REPO_ID}.repo"
-baseurls = ["${GUEST_REPO_BASEOS_URL}"]
-gpgcheck = false
-enabled = true
-
-[[customizations.repositories]]
-id = "${GUEST_REPO_ID}-appstream"
-filename = "${GUEST_REPO_ID}.repo"
-baseurls = ["${GUEST_REPO_APPSTREAM_URL}"]
-gpgcheck = false
-enabled = true
-EOF
-    set -x
-fi
 
 # Build installation image.
 build_image "$BLUEPRINT_FILE" ostree
@@ -574,10 +366,9 @@ greenprint "Generate kickstart file"
 sudo tee "$KS_FILE" > /dev/null << STOPHERE
 text
 rootpw --lock --iscrypted locked
-user --name=${SSH_USER} --groups=wheel --iscrypted --password=\$6\$GRmb7S0p8vsYmXzH\$o0E020S.9JQGaHkszoog4ha4AQVs3sk8q0DvLjSMxoxHBKnB2FBXGQ/OkwZQfW/76ktHd0NX5nls2LPxPuUdl.
 network --bootproto=dhcp --device=link --activate --onboot=on
 zerombr
-clearpart --all --initlabel --disklabel=gpt
+clearpart --all --initlabel --disklabel=msdos
 autopart --nohome --noswap --type=plain
 ostreesetup --nogpg --osname=${OS_NAME} --remote=${OS_NAME} --url=${PROD_REPO_URL} --ref=${OSTREE_REF}
 poweroff
@@ -594,15 +385,13 @@ sudo virt-install  --name="${IMAGE_KEY}"\
                    --initrd-inject="${KS_FILE}" \
                    --extra-args="inst.ks=file:/ks.cfg console=ttyS0,115200" \
                    --disk path="${LIBVIRT_IMAGE_PATH}",format=qcow2 \
-                   --ram 8192 \
+                   --ram 4096 \
                    --vcpus 2 \
                    --network network=integration,mac=34:49:22:B0:83:30 \
                    --os-variant ${OS_VARIANT} \
                    --boot ${BOOT_ARGS} \
-                   --tpm none \
                    --location "${BOOT_LOCATION}" \
-                   --graphics none \
-                   --serial file,path=${CONSOLE_LOG} \
+                   --nographics \
                    --noautoconsole \
                    --wait=-1 \
                    --noreboot
@@ -621,15 +410,6 @@ for _ in $(seq 0 30); do
     fi
     sleep 10
 done
-
-if [[ $RESULTS != 1 ]]; then
-    greenprint "SSH failed on initial boot — collecting VM diagnostics"
-    sudo virsh domstate "${IMAGE_KEY}" || true
-    sudo virsh net-dhcp-leases integration || true
-    greenprint "VM console output (last 100 lines):"
-    sudo tail -100 ${CONSOLE_LOG} 2>/dev/null || true
-fi
-check_result
 
 greenprint "🛃 Copying binary and script files to edge vm"
 
