@@ -1,8 +1,6 @@
 #!/bin/bash
 set -euox pipefail
 
-ARCH=$(uname -m)
-
 # Dumps details about the instance running the CI job.
 echo -e "\033[0;36m"
 cat << EOF
@@ -22,12 +20,8 @@ echo -e "\033[0m"
 
 # Get OS info
 source /etc/os-release
-if [[ -n "${TARGET_DISTRO:-}" ]]; then
-    IFS='-' read -r ID VERSION_ID <<< "${TARGET_DISTRO}"
-fi
 
 # Setup variables
-ARCH=$(uname -m)
 TEST_UUID=qcow2-$((1 + RANDOM % 1000000))
 TEMPDIR=$(mktemp -d)
 GUEST_ADDRESS=192.168.100.50
@@ -36,94 +30,51 @@ SSH_KEY=key/ostree_key
 SSH_KEY_PUB=$(cat "${SSH_KEY}".pub)
 EDGE_USER=core
 EDGE_USER_PASSWORD=foobar
-CONSOLE_LOG=/tmp/vm-console.log
-
-COPR_CHROOT=""
-
-# RPM acquisition mode:
-#   If DOWNLOAD_NODE and COMPOSE_ID are both set -> download from compose
-#   Otherwise -> install greenboot from Copr (default)
-USE_COMPOSE_RPMS=false
-if [[ -n "${DOWNLOAD_NODE:-}" && -n "${COMPOSE_ID:-}" ]]; then
-    USE_COMPOSE_RPMS=true
-fi
-GREENBOOT_PACKAGES_URL=""
 
 case "${ID}-${VERSION_ID}" in
-    "fedora-44")
+    "fedora-43")
         OS_VARIANT="fedora-unknown"
-        BASE_IMAGE_URL="quay.io/fedora/fedora-iot:44"
+        BASE_IMAGE_URL="quay.io/fedora/fedora-bootc:43"
         BIB_URL="quay.io/centos-bootc/bootc-image-builder:latest"
         BOOT_ARGS="uefi"
+        sudo dnf install -y git make rpm-build rust-toolset
+        ;;
+    "fedora-44")
+        OS_VARIANT="fedora-unknown"
+        BASE_IMAGE_URL="quay.io/fedora/fedora-bootc:44"
+        BIB_URL="quay.io/centos-bootc/bootc-image-builder:latest"
+        BOOT_ARGS="uefi"
+        sudo dnf install -y git make rpm-build rust-toolset
         ;;
     "fedora-45")
         OS_VARIANT="fedora-rawhide"
-        BASE_IMAGE_URL="quay.io/fedora/fedora-iot:rawhide"
+        BASE_IMAGE_URL="quay.io/fedora/fedora-bootc:rawhide"
         BIB_URL="quay.io/centos-bootc/bootc-image-builder:latest"
         BOOT_ARGS="uefi"
+        sudo dnf install -y git make rpm-build rust-toolset
         ;;
     "centos-10")
         OS_VARIANT="centos-stream9"
         BASE_IMAGE_URL="quay.io/centos-bootc/centos-bootc:stream10"
         BIB_URL="quay.io/centos-bootc/bootc-image-builder:latest"
         BOOT_ARGS="uefi,firmware.feature0.name=secure-boot,firmware.feature0.enabled=no"
-        COPR_CHROOT="centos-stream-10-${ARCH}"
+        sudo dnf install -y git make rpm-build rust-toolset
         ;;
     "rhel-9.8")
         OS_VARIANT="rhel9-unknown"
         BASE_IMAGE_URL="registry.stage.redhat.io/rhel9/rhel-bootc:9.8"
         BIB_URL="registry.stage.redhat.io/rhel9/bootc-image-builder:9.8"
         BOOT_ARGS="uefi"
-        COPR_CHROOT="centos-stream-9-${ARCH}"
-        { set +x; } 2>/dev/null
+        sudo dnf install -y git make rpm-build rust-toolset
         sed -i "s/REPLACE_ME_HERE/${DOWNLOAD_NODE}/g" files/rhel-9-8.repo
-        sed -i "s/REPLACE_ARCH_HERE/${ARCH}/g" files/rhel-9-8.repo
-        if [[ "${USE_COMPOSE_RPMS}" == true ]]; then
-            GREENBOOT_PACKAGES_URL="https://${DOWNLOAD_NODE}/rhel-9/composes/RHEL-9/${COMPOSE_ID}/compose/AppStream/${ARCH}/os/Packages/"
-        fi
-        set -x
-        ;;
-    "rhel-9.9")
-        OS_VARIANT="rhel9-unknown"
-        BASE_IMAGE_URL="registry.stage.redhat.io/rhel9/rhel-bootc:9.9"
-        BIB_URL="registry.stage.redhat.io/rhel9/bootc-image-builder:9.9"
-        BOOT_ARGS="uefi"
-        COPR_CHROOT="centos-stream-9-${ARCH}"
-        { set +x; } 2>/dev/null
-        sed -i "s/REPLACE_ME_HERE/${DOWNLOAD_NODE}/g" files/rhel-9-9.repo
-        sed -i "s/REPLACE_ARCH_HERE/${ARCH}/g" files/rhel-9-9.repo
-        if [[ "${USE_COMPOSE_RPMS}" == true ]]; then
-            GREENBOOT_PACKAGES_URL="https://${DOWNLOAD_NODE}/rhel-9/composes/RHEL-9/${COMPOSE_ID}/compose/AppStream/${ARCH}/os/Packages/"
-        fi
-        set -x
         ;;
     "rhel-10.2")
         OS_VARIANT="rhel10-unknown"
         BASE_IMAGE_URL="registry.stage.redhat.io/rhel10/rhel-bootc:10.2"
         BIB_URL="registry.stage.redhat.io/rhel10/bootc-image-builder:10.2"
         BOOT_ARGS="uefi"
-        COPR_CHROOT="centos-stream-10-${ARCH}"
-        { set +x; } 2>/dev/null
+        sudo dnf install -y git make rpm-build rust-toolset
         sed -i "s/REPLACE_ME_HERE/${DOWNLOAD_NODE}/g" files/rhel-10-2.repo
-        sed -i "s/REPLACE_ARCH_HERE/${ARCH}/g" files/rhel-10-2.repo
-        if [[ "${USE_COMPOSE_RPMS}" == true ]]; then
-            GREENBOOT_PACKAGES_URL="https://${DOWNLOAD_NODE}/rhel-10/composes/RHEL-10/${COMPOSE_ID}/compose/AppStream/${ARCH}/os/Packages/"
-        fi
-        set -x
-        ;;
-    "rhel-10.3")
-        OS_VARIANT="rhel10-unknown"
-        BASE_IMAGE_URL="registry.stage.redhat.io/rhel10/rhel-bootc:10.3"
-        BIB_URL="registry.stage.redhat.io/rhel10/bootc-image-builder:10.3"
-        BOOT_ARGS="uefi"
-        COPR_CHROOT="centos-stream-10-${ARCH}"
-        { set +x; } 2>/dev/null
-        sed -i "s/REPLACE_ME_HERE/${DOWNLOAD_NODE}/g" files/rhel-10-3.repo
-        sed -i "s/REPLACE_ARCH_HERE/${ARCH}/g" files/rhel-10-3.repo
-        if [[ "${USE_COMPOSE_RPMS}" == true ]]; then
-            GREENBOOT_PACKAGES_URL="https://${DOWNLOAD_NODE}/rhel-10/composes/RHEL-10/${COMPOSE_ID}/compose/AppStream/${ARCH}/os/Packages/"
-        fi
-        set -x
         ;;
     *)
         echo "unsupported distro: ${ID}-${VERSION_ID}"
@@ -161,29 +112,12 @@ wait_for_ssh_up () {
 ##
 ###########################################################
 greenprint "Installing required packages"
-sudo dnf install -y podman qemu-img firewalld qemu-kvm libvirt-client libvirt-daemon-kvm libvirt-daemon virt-install ansible-core lorax gobject-introspection
+sudo dnf install -y podman qemu-img firewalld qemu-kvm libvirt-client libvirt-daemon-kvm libvirt-daemon virt-install rpmdevtools ansible-core cargo lorax gobject-introspection
 ansible-galaxy collection install community.general
 
 # Start firewalld
 greenprint "Start firewalld"
 sudo systemctl enable --now firewalld
-
-greenprint "Waiting for firewalld D-Bus interface to be ready"
-fw_timeout=30
-fw_elapsed=0
-until sudo firewall-cmd --state >/dev/null 2>&1; do
-    sleep 1
-    fw_elapsed=$((fw_elapsed + 1))
-    if ! systemctl is-active --quiet firewalld; then
-        echo "firewalld systemd unit is not active" >&2
-        sudo systemctl status firewalld --no-pager >&2 || true
-        exit 1
-    fi
-    if [[ ${fw_elapsed} -ge ${fw_timeout} ]]; then
-        echo "firewalld did not become ready after ${fw_timeout} seconds" >&2
-        exit 1
-    fi
-done
 
 # Check ostree_key permissions
 KEY_PERMISSION_PRE=$(stat -L -c "%a %G %U" key/ostree_key | grep -oP '\d+' | head -n 1)
@@ -240,30 +174,17 @@ fi
 
 ###########################################################
 ##
-## Copy test assets
+## Build greenboot rpm packages
 ##
 ###########################################################
-greenprint "Copying test assets"
-(
-    cd ..
-    cp testing_assets/passing_script.sh tests/
-    cp testing_assets/passing_binary tests/
-    cp testing_assets/failing_script.sh tests/
-    cp testing_assets/failing_binary tests/
-)
-
-###########################################################
-##
-## Optionally download greenboot rpm packages from compose
-##
-###########################################################
-if [[ "${USE_COMPOSE_RPMS}" == true && -n "${GREENBOOT_PACKAGES_URL}" ]]; then
-    greenprint "Downloading greenboot RPMs from compose"
-    rm -f greenboot-*.rpm
-    # source: tests/common/download-compose-rpms.sh
-    source "$(dirname "${BASH_SOURCE[0]}")/common/download-compose-rpms.sh"
-    download_compose_rpms "${GREENBOOT_PACKAGES_URL}" "."
-fi
+greenprint "Building greenboot packages"
+pushd .. && \
+make rpm
+cp rpmbuild/RPMS/x86_64/*.rpm tests/
+cp testing_assets/passing_script.sh tests/
+cp testing_assets/passing_binary tests/
+cp testing_assets/failing_script.sh tests/
+cp testing_assets/failing_binary tests/ && popd
 
 ###########################################################
 ##
@@ -275,51 +196,11 @@ podman login quay.io -u ${QUAY_USERNAME} -p ${QUAY_PASSWORD}
 podman login registry.stage.redhat.io -u ${STAGE_REDHAT_IO_USERNAME} -p ${STAGE_REDHAT_IO_TOKEN}
 tee Containerfile > /dev/null << EOF
 FROM ${BASE_IMAGE_URL}
-EOF
-
-# RHEL repo is always needed: Copr path uses it for dnf deps,
-# qcow2 BIB uses it for depsolve
-case "${ID}-${VERSION_ID}" in
-    "rhel-9.8")
-        tee -a Containerfile > /dev/null << EOF
-COPY files/rhel-9-8.repo /etc/yum.repos.d/rhel-9-8.repo
-EOF
-        ;;
-    "rhel-9.9")
-        tee -a Containerfile > /dev/null << EOF
-COPY files/rhel-9-9.repo /etc/yum.repos.d/rhel-9-9.repo
-EOF
-        ;;
-    "rhel-10.2")
-        tee -a Containerfile > /dev/null << EOF
-COPY files/rhel-10-2.repo /etc/yum.repos.d/rhel-10-2.repo
-EOF
-        ;;
-    "rhel-10.3")
-        tee -a Containerfile > /dev/null << EOF
-COPY files/rhel-10-3.repo /etc/yum.repos.d/rhel-10-3.repo
-EOF
-        ;;
-esac
-
-if [[ "${USE_COMPOSE_RPMS}" == true && -n "${GREENBOOT_PACKAGES_URL}" ]]; then
-    tee -a Containerfile > /dev/null << EOF
+# Copy the local RPM files into the container
 COPY greenboot-*.rpm /tmp/
-RUN dnf install -y /tmp/greenboot-*.rpm && \
-    rm -f /tmp/greenboot-*.rpm && \
+RUN dnf install -y \
+    /tmp/greenboot-*.rpm && \
     systemctl enable greenboot-healthcheck.service
-EOF
-else
-    tee -a Containerfile > /dev/null << EOF
-RUN (dnf install -y 'dnf5-command(copr)' || dnf install -y 'dnf-command(copr)') && \
-    dnf copr enable -y packit/fedora-iot-greenboot-rs-${PR_NUMBER} ${COPR_CHROOT} && \
-    dnf clean metadata && \
-    (dnf reinstall -y greenboot greenboot-default-health-checks || dnf install -y greenboot greenboot-default-health-checks) && \
-    systemctl enable greenboot-healthcheck.service
-EOF
-fi
-
-tee -a Containerfile > /dev/null << EOF
 RUN sed -i "s/GREENBOOT_MAX_BOOT_ATTEMPTS=3/GREENBOOT_MAX_BOOT_ATTEMPTS=5/g" /etc/greenboot/greenboot.conf
 RUN sed -i 's#DISABLED_HEALTHCHECKS=()#DISABLED_HEALTHCHECKS=("01_repository_dns_check.sh" "not_exit.sh")#g' /etc/greenboot/greenboot.conf
 
@@ -335,24 +216,23 @@ COPY failing_script.sh /etc/greenboot/red.d
 
 COPY passing_binary /etc/greenboot/check/required.d/
 COPY failing_binary /etc/greenboot/check/wanted.d/
+# Clean up by removing the local RPMs if desired
+RUN rm -f /tmp/greenboot-*.rpm
 EOF
 
-greenprint "Building container (retrying until Copr build is available)"
-build_success=false
-for attempt in $(seq 1 10); do
-    if podman build --retry=5 --retry-delay=10s -t quay.io/${QUAY_USERNAME}/greenboot-bootc:${TEST_UUID} -f Containerfile .; then
-        build_success=true
-        break
-    fi
-    greenprint "Container build attempt ${attempt}/10 failed, retrying in 60s..."
-    sleep 60
-done
-
-if [ "$build_success" = false ]; then
-    echo "Container build failed after 10 attempts."
-    exit 1
+if [[ "${ID}-${VERSION_ID}" == "rhel-9.8" ]]; then
+    tee -a Containerfile >> /dev/null << EOF
+COPY files/rhel-9-8.repo /etc/yum.repos.d/rhel-9-8.repo
+EOF
 fi
 
+if [[ "${ID}-${VERSION_ID}" == "rhel-10.2" ]]; then
+    tee -a Containerfile >> /dev/null << EOF
+COPY files/rhel-10-2.repo /etc/yum.repos.d/rhel-10-2.repo
+EOF
+fi
+
+podman build  --retry=5 --retry-delay=10s -t quay.io/${QUAY_USERNAME}/greenboot-bootc:${TEST_UUID} -f Containerfile .
 greenprint "Pushing bootc container to quay.io"
 podman push quay.io/${QUAY_USERNAME}/greenboot-bootc:${TEST_UUID}
 
@@ -409,15 +289,13 @@ sudo restorecon -Rv /var/lib/libvirt/images/
 
 sudo virt-install  --name="${TEST_UUID}-uefi"\
                    --disk path="${LIBVIRT_IMAGE_PATH_UEFI}",format=qcow2 \
-                   --ram 8192 \
+                   --ram 3072 \
                    --vcpus 2 \
                    --network network=integration,mac=34:49:22:B0:83:30 \
                    --os-type linux \
                    --os-variant ${OS_VARIANT} \
                    --boot ${BOOT_ARGS} \
-                   --tpm none \
-                   --graphics none \
-                   --serial file,path=${CONSOLE_LOG} \
+                   --nographics \
                    --noautoconsole \
                    --wait=-1 \
                    --import \
@@ -436,22 +314,6 @@ for _ in $(seq 0 30); do
     fi
     sleep 10
 done
-
-if [[ $RESULTS != 1 ]]; then
-    greenprint "SSH failed on initial boot — collecting VM diagnostics"
-    sudo virsh domstate "${TEST_UUID}-uefi" || true
-    sudo virsh domiflist "${TEST_UUID}-uefi" || true
-    sudo virsh net-dhcp-leases integration || true
-    sudo ip addr show integration || true
-    greenprint "Firewall zone for integration bridge:"
-    sudo firewall-cmd --get-zone-of-interface=integration || true
-    greenprint "Connectivity test:"
-    ping -c 2 -W 2 192.168.100.50 || true
-    greenprint "Disk image info:"
-    qemu-img info "${LIBVIRT_IMAGE_PATH_UEFI}" || true
-    greenprint "VM console output (last 100 lines):"
-    sudo tail -100 ${CONSOLE_LOG} 2>/dev/null || true
-fi
 check_result
 
 ###########################################################
@@ -492,14 +354,6 @@ for _ in $(seq 0 30); do
     fi
     sleep 10
 done
-
-if [[ $RESULTS != 1 ]]; then
-    greenprint "SSH failed after upgrade — collecting VM diagnostics"
-    sudo virsh domstate "${TEST_UUID}-uefi" || true
-    sudo virsh net-dhcp-leases integration || true
-    greenprint "VM console output (last 100 lines):"
-    sudo tail -100 ${CONSOLE_LOG} 2>/dev/null || true
-fi
 check_result
 
 # Add instance IP address into /etc/ansible/hosts
