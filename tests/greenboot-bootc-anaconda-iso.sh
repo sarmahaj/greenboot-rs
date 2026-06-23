@@ -30,6 +30,7 @@ SSH_KEY=key/ostree_key
 SSH_KEY_PUB=$(cat "${SSH_KEY}".pub)
 EDGE_USER=core
 EDGE_USER_PASSWORD=foobar
+CONSOLE_LOG=/tmp/vm-console.log
 
 case "${ID}-${VERSION_ID}" in
     "fedora-43")
@@ -329,7 +330,8 @@ sudo virt-install  --name="${TEST_UUID}-uefi"\
                    --os-variant ${OS_VARIANT} \
                    --cdrom "/var/lib/libvirt/images/install.iso" \
                    --boot ${BOOT_ARGS} \
-                   --nographics \
+                   --graphics none \
+                   --serial file,path=${CONSOLE_LOG} \
                    --noautoconsole \
                    --wait=-1 \
                    --noreboot
@@ -346,6 +348,14 @@ for _ in $(seq 0 30); do
     fi
     sleep 10
 done
+
+if [[ $RESULTS != 1 ]]; then
+    greenprint "SSH failed — collecting VM diagnostics"
+    sudo virsh domstate "${TEST_UUID}-uefi" || true
+    sudo virsh net-dhcp-leases integration || true
+    greenprint "VM console output (last 100 lines):"
+    sudo tail -100 ${CONSOLE_LOG} 2>/dev/null || true
+fi
 check_result
 
 ###########################################################
@@ -386,6 +396,14 @@ for _ in $(seq 0 30); do
     fi
     sleep 10
 done
+
+if [[ $RESULTS != 1 ]]; then
+    greenprint "SSH failed after upgrade — collecting VM diagnostics"
+    sudo virsh domstate "${TEST_UUID}-uefi" || true
+    sudo virsh net-dhcp-leases integration || true
+    greenprint "VM console output (last 100 lines):"
+    sudo tail -100 ${CONSOLE_LOG} 2>/dev/null || true
+fi
 check_result
 
 # Add instance IP address into /etc/ansible/hosts

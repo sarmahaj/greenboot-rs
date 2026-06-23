@@ -44,6 +44,7 @@ SSH_USER="admin"
 OS_NAME="rhel-edge"
 IMAGE_TYPE=edge-commit
 PROD_REPO_URL=http://192.168.100.1/repo
+CONSOLE_LOG=/tmp/vm-console.log
 
 # Set up temporary files.
 TEMPDIR=$(mktemp -d)
@@ -391,7 +392,8 @@ sudo virt-install  --name="${IMAGE_KEY}"\
                    --os-variant ${OS_VARIANT} \
                    --boot ${BOOT_ARGS} \
                    --location "${BOOT_LOCATION}" \
-                   --nographics \
+                   --graphics none \
+                   --serial file,path=${CONSOLE_LOG} \
                    --noautoconsole \
                    --wait=-1 \
                    --noreboot
@@ -410,6 +412,15 @@ for _ in $(seq 0 30); do
     fi
     sleep 10
 done
+
+if [[ $RESULTS != 1 ]]; then
+    greenprint "SSH failed — collecting VM diagnostics"
+    sudo virsh domstate "${IMAGE_KEY}" || true
+    sudo virsh net-dhcp-leases integration || true
+    greenprint "VM console output (last 100 lines):"
+    sudo tail -100 ${CONSOLE_LOG} 2>/dev/null || true
+fi
+check_result
 
 greenprint "🛃 Copying binary and script files to edge vm"
 

@@ -40,6 +40,7 @@ actions:
 jobs:
 - job: copr_build
   trigger: pull_request
+  update_release: true
   targets:
   - centos-stream-9-aarch64
   - centos-stream-9-x86_64
