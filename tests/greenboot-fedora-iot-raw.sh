@@ -3,11 +3,8 @@ set -exuo pipefail
 
 # Get OS data.
 source /etc/os-release
-if [[ -n "${TARGET_DISTRO:-}" ]]; then
-    IFS='-' read -r ID VERSION_ID <<< "${TARGET_DISTRO}"
-fi
 
-# Dump details about the instance running the CI job.
+# Dumps details about the instance running the CI job.
 CPUS=$(nproc)
 MEM=$(free -m | grep -oP '\d+' | head -n 1)
 DISK=$(df --output=size -h / | sed '1d;s/[^0-9]//g')
@@ -43,7 +40,7 @@ function greenprint {
 TEST_UUID=$(uuidgen)
 IMAGE_KEY="fedora-iot-raw-${TEST_UUID}"
 GUEST_ADDRESS=192.168.100.50
-SSH_USER="root"
+SSH_USER="admin"
 CONSOLE_LOG=/tmp/vm-console.log
 
 # Set up temporary files.
@@ -73,7 +70,7 @@ esac
 greenprint "Install required packages"
 sudo dnf install -y --nogpgcheck ansible-core qemu-img firewalld qemu-kvm \
     libvirt-client libvirt-daemon-kvm libvirt-daemon virt-install \
-    kpartx e2fsprogs xz
+    libguestfs-tools-c xz
 
 # Avoid collection installation failure
 for _ in $(seq 0 30); do
@@ -96,23 +93,6 @@ fi
 # Start firewalld
 greenprint "Start firewalld"
 sudo systemctl enable --now firewalld
-
-greenprint "Waiting for firewalld D-Bus interface to be ready"
-fw_timeout=30
-fw_elapsed=0
-until sudo firewall-cmd --state >/dev/null 2>&1; do
-    sleep 1
-    fw_elapsed=$((fw_elapsed + 1))
-    if ! systemctl is-active --quiet firewalld; then
-        echo "firewalld systemd unit is not active" >&2
-        sudo systemctl status firewalld --no-pager >&2 || true
-        exit 1
-    fi
-    if [[ ${fw_elapsed} -ge ${fw_timeout} ]]; then
-        echo "firewalld did not become ready after ${fw_timeout} seconds" >&2
-        exit 1
-    fi
-done
 
 # Start libvirtd and test it.
 greenprint "🚀 Starting libvirt daemon"
@@ -174,8 +154,9 @@ clean_up () {
     greenprint "🧼 Cleaning up"
     sudo virsh destroy "${IMAGE_KEY}"
     sudo virsh undefine "${IMAGE_KEY}" --nvram
-    sudo rm -f "/var/lib/libvirt/images/${IMAGE_KEY}.raw"
-    # Remove tmp dir.
+    # Remove qcow2 file.
+    sudo virsh vol-delete --pool images "${IMAGE_KEY}.qcow2"
+    # Remomve tmp dir.
     sudo rm -rf "$TEMPDIR"
 }
 
@@ -199,7 +180,7 @@ check_result () {
 
 greenprint "📥 Downloading Fedora IoT ${FEDORA_VERSION} raw image"
 COMPOSE_URL="https://kojipkgs.fedoraproject.org/compose/iot/latest-Fedora-IoT-${FEDORA_VERSION}/compose/IoT/${ARCH}/images/"
-RAW_IMAGE_FILENAME=$(curl -sSf "${COMPOSE_URL}" | grep -oP "Fedora-IoT-raw-${FEDORA_VERSION}-[^\"]+\.${ARCH}\.raw\.xz" | head -1)
+RAW_IMAGE_FILENAME=$(curl -s "${COMPOSE_URL}" | grep -oP "Fedora-IoT-raw-${FEDORA_VERSION}-[^\"]+\.${ARCH}\.raw\.xz" | head -1)
 
 if [[ -z "${RAW_IMAGE_FILENAME}" ]]; then
     echo "Failed to find raw image at ${COMPOSE_URL}"
@@ -212,33 +193,32 @@ greenprint "📦 Decompressing raw image"
 xz -d "${TEMPDIR}/${RAW_IMAGE_FILENAME}"
 RAW_IMAGE="${TEMPDIR}/${RAW_IMAGE_FILENAME%.xz}"
 
-greenprint "📦 Preparing raw image"
-LIBVIRT_IMAGE_PATH=/var/lib/libvirt/images/${IMAGE_KEY}.raw
-sudo cp "${RAW_IMAGE}" "${LIBVIRT_IMAGE_PATH}"
+greenprint "🔄 Converting raw image to qcow2"
+LIBVIRT_IMAGE_PATH=/var/lib/libvirt/images/${IMAGE_KEY}.qcow2
+sudo qemu-img convert -f raw -O qcow2 "${RAW_IMAGE}" "${LIBVIRT_IMAGE_PATH}"
+sudo qemu-img resize "${LIBVIRT_IMAGE_PATH}" 20G
 rm -f "${RAW_IMAGE}"
-sudo qemu-img resize "${LIBVIRT_IMAGE_PATH}" +10G
 
-greenprint "🔧 Resizing root partition"
-echo ", +" | sudo sfdisk -N 3 "${LIBVIRT_IMAGE_PATH}"
+##################################################
+##
+## Customize image with SSH key and user
+##
+##################################################
 
-greenprint "🔑 Injecting SSH key via kpartx"
-sudo kpartx -av "${LIBVIRT_IMAGE_PATH}"
-LOOP_DEV=$(sudo kpartx -l "${LIBVIRT_IMAGE_PATH}" | head -1 | awk '{print $1}' | sed 's/p[0-9]*$//')
-ROOT_PART="/dev/mapper/${LOOP_DEV}p3"
+greenprint "🔧 Customizing image with virt-customize"
+sudo virt-customize -a "${LIBVIRT_IMAGE_PATH}" \
+    --run-command "useradd -m -G wheel ${SSH_USER} || true" \
+    --run-command "echo '${SSH_USER} ALL=(ALL) NOPASSWD: ALL' >> /etc/sudoers" \
+    --mkdir "/home/${SSH_USER}/.ssh" \
+    --upload "${SSH_KEY}.pub:/home/${SSH_USER}/.ssh/authorized_keys" \
+    --run-command "chown -R ${SSH_USER}:${SSH_USER} /home/${SSH_USER}/.ssh" \
+    --run-command "chmod 700 /home/${SSH_USER}/.ssh" \
+    --run-command "chmod 600 /home/${SSH_USER}/.ssh/authorized_keys" \
+    --selinux-relabel
 
-sudo e2fsck -f "${ROOT_PART}" -y
-sudo resize2fs "${ROOT_PART}"
-
-MOUNT_DIR="${TEMPDIR}/root"
-mkdir -p "${MOUNT_DIR}"
-sudo mount "${ROOT_PART}" "${MOUNT_DIR}"
-
-sudo mkdir -p "${MOUNT_DIR}/ostree/deploy/fedora-iot/var/roothome/.ssh"
-cat "${SSH_KEY}.pub" | sudo tee -a "${MOUNT_DIR}/ostree/deploy/fedora-iot/var/roothome/.ssh/authorized_keys"
-sudo chmod -R u=rwX,o=,g= "${MOUNT_DIR}/ostree/deploy/fedora-iot/var/roothome/.ssh/"
-
-sudo umount "${MOUNT_DIR}"
-sudo kpartx -dv "${LIBVIRT_IMAGE_PATH}"
+# Ensure SELinux is happy with our new images.
+greenprint "👿 Running restorecon on image directory"
+sudo restorecon -Rv /var/lib/libvirt/images/
 
 ##################################################
 ##
@@ -248,8 +228,8 @@ sudo kpartx -dv "${LIBVIRT_IMAGE_PATH}"
 
 greenprint "🚀 Installing VM from raw image"
 sudo virt-install  --name="${IMAGE_KEY}"\
-                   --disk path="${LIBVIRT_IMAGE_PATH}",format=raw \
-                   --ram 8192 \
+                   --disk path="${LIBVIRT_IMAGE_PATH}",format=qcow2 \
+                   --ram 4096 \
                    --vcpus 2 \
                    --network network=integration,mac=34:49:22:B0:83:30 \
                    --os-variant ${OS_VARIANT} \
@@ -298,7 +278,7 @@ for _ in $(seq 0 30); do
     if [[ $copr_result == 0 ]]; then
         break
     fi
-    greenprint "Copr repo not ready yet, retrying in 30 seconds..."
+    greenprint "Copr repo not ready yet, retrying in 30s..."
     sleep 30
 done
 
@@ -308,13 +288,9 @@ if [[ $copr_result != 0 ]]; then
     exit 1
 fi
 
-greenprint "📦 Downloading greenboot RPMs from Copr"
-ssh "${SSH_OPTIONS[@]}" -i "${SSH_KEY}" "${SSH_USER}@${GUEST_ADDRESS}" \
-    "dnf download --destdir /tmp/greenboot-rpms greenboot greenboot-default-health-checks"
-
 greenprint "📦 Replacing greenboot packages with PR build"
 ssh "${SSH_OPTIONS[@]}" -i "${SSH_KEY}" "${SSH_USER}@${GUEST_ADDRESS}" \
-    "sudo rpm-ostree override replace /tmp/greenboot-rpms/*.rpm"
+    "sudo rpm-ostree override replace greenboot greenboot-default-health-checks"
 
 greenprint "🔄 Rebooting to activate new deployment"
 ssh "${SSH_OPTIONS[@]}" -i "${SSH_KEY}" "${SSH_USER}@${GUEST_ADDRESS}" \
@@ -360,8 +336,8 @@ greenprint "🛃 Copying binary and script files to VM"
 ssh "${SSH_OPTIONS[@]}" -i "${SSH_KEY}" "${SSH_USER}@${GUEST_ADDRESS}" "sudo mkdir -p /etc/greenboot/red.d /etc/greenboot/green.d"
 
 # Copy all files to temp directory first
-scp "${SSH_OPTIONS[@]}" -i "${SSH_KEY}" ../testing_assets/failing_binary."${ARCH}" "${SSH_USER}@${GUEST_ADDRESS}":/tmp/failing_binary
-scp "${SSH_OPTIONS[@]}" -i "${SSH_KEY}" ../testing_assets/passing_binary."${ARCH}" "${SSH_USER}@${GUEST_ADDRESS}":/tmp/passing_binary
+scp "${SSH_OPTIONS[@]}" -i "${SSH_KEY}" ../testing_assets/failing_binary "${SSH_USER}@${GUEST_ADDRESS}":/tmp/
+scp "${SSH_OPTIONS[@]}" -i "${SSH_KEY}" ../testing_assets/passing_binary "${SSH_USER}@${GUEST_ADDRESS}":/tmp/
 scp "${SSH_OPTIONS[@]}" -i "${SSH_KEY}" ../testing_assets/failing_script.sh "${SSH_USER}@${GUEST_ADDRESS}":/tmp/
 scp "${SSH_OPTIONS[@]}" -i "${SSH_KEY}" ../testing_assets/passing_script.sh "${SSH_USER}@${GUEST_ADDRESS}":/tmp/
 

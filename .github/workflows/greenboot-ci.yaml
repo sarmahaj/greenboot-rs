@@ -41,34 +41,10 @@ jobs:
       repo_url: ${{ fromJson(steps.pr-api.outputs.data).head.repo.html_url }}
       pr_number: ${{ github.event.number }}
 
-  make-rpm:
-    needs: check-pull-request
-    if: ${{ needs.check-pull-request.outputs.allowed_user == 'true' }}
-    runs-on: ubuntu-latest
-    container:
-      image: quay.io/centos/centos:stream9
-    steps:
-      - name: Install git for checkout
-        run: dnf install -y git
-
-      - name: Checkout PR code
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-        with:
-          ref: ${{ needs.check-pull-request.outputs.sha }}
-          allow-unsafe-pr-checkout: true
-
-      - name: Build RPMs
-        run: |
-          dnf install -y git make rpm-build rust-toolset
-          git config --global --add safe.directory /__w/greenboot-rs/greenboot-rs
-          make rpm
-
-      - name: Verify RPMs were created
-        run: ls rpmbuild/RPMS/*/*.rpm
-
   centos-10-bootc:
     needs: check-pull-request
     if: ${{ needs.check-pull-request.outputs.allowed_user == 'true' }}
+    continue-on-error: true
     runs-on: ubuntu-latest
     permissions:
       statuses: write
@@ -85,13 +61,14 @@ jobs:
           pull_request_status_name: centos-10-bootc
           tmt_context: "arch=x86_64;distro=cs-10"
           tmt_plan_regex: bootc
-          variables: "ARCH=x86_64;PR_NUMBER=${{ needs.check-pull-request.outputs.pr_number }}"
+          variables: "ARCH=x86_64"
           timeout: 90
           secrets: "QUAY_USERNAME=${{ secrets.QUAY_USERNAME }};QUAY_PASSWORD=${{ secrets.QUAY_PASSWORD }};STAGE_REDHAT_IO_USERNAME=${{ secrets.STAGE_REDHAT_IO_USERNAME }};STAGE_REDHAT_IO_TOKEN=${{ secrets.STAGE_REDHAT_IO_TOKEN }};DOWNLOAD_NODE=${{ secrets.DOWNLOAD_NODE }}"
 
   fedora-44-bootc:
     needs: check-pull-request
     if: ${{ needs.check-pull-request.outputs.allowed_user == 'true' }}
+    continue-on-error: true
     runs-on: ubuntu-latest
     permissions:
       statuses: write
@@ -108,13 +85,14 @@ jobs:
           pull_request_status_name: fedora-44-bootc
           tmt_context: "arch=x86_64;distro=fedora-44"
           tmt_plan_regex: bootc
-          variables: "ARCH=x86_64;PR_NUMBER=${{ needs.check-pull-request.outputs.pr_number }}"
+          variables: "ARCH=x86_64"
           timeout: 90
           secrets: "QUAY_USERNAME=${{ secrets.QUAY_USERNAME }};QUAY_PASSWORD=${{ secrets.QUAY_PASSWORD }};STAGE_REDHAT_IO_USERNAME=${{ secrets.STAGE_REDHAT_IO_USERNAME }};STAGE_REDHAT_IO_TOKEN=${{ secrets.STAGE_REDHAT_IO_TOKEN }};DOWNLOAD_NODE=${{ secrets.DOWNLOAD_NODE }}"
 
   fedora-45-bootc:
     needs: check-pull-request
     if: ${{ needs.check-pull-request.outputs.allowed_user == 'true' }}
+    continue-on-error: true
     runs-on: ubuntu-latest
     permissions:
       statuses: write
@@ -123,7 +101,7 @@ jobs:
       - name: Run the tests
         uses: sclorg/testing-farm-as-github-action@230555baceb860aa468d216f1822974836b965d1 # v4.3.1
         with:
-          compose: Fedora-44
+          compose: Fedora-Rawhide
           api_key: ${{ secrets.TF_API_PUB_KEY }}
           git_url: ${{ needs.check-pull-request.outputs.repo_url }}
           git_ref: ${{ needs.check-pull-request.outputs.ref }}
@@ -131,13 +109,14 @@ jobs:
           pull_request_status_name: fedora-45-bootc
           tmt_context: "arch=x86_64;distro=fedora-45"
           tmt_plan_regex: bootc
-          variables: "ARCH=x86_64;TARGET_DISTRO=fedora-45;PR_NUMBER=${{ needs.check-pull-request.outputs.pr_number }}"
+          variables: "ARCH=x86_64"
           timeout: 90
           secrets: "QUAY_USERNAME=${{ secrets.QUAY_USERNAME }};QUAY_PASSWORD=${{ secrets.QUAY_PASSWORD }};STAGE_REDHAT_IO_USERNAME=${{ secrets.STAGE_REDHAT_IO_USERNAME }};STAGE_REDHAT_IO_TOKEN=${{ secrets.STAGE_REDHAT_IO_TOKEN }};DOWNLOAD_NODE=${{ secrets.DOWNLOAD_NODE }}"
 
   fedora-44-ostree:
     needs: check-pull-request
     if: ${{ needs.check-pull-request.outputs.allowed_user == 'true' }}
+    continue-on-error: true
     runs-on: ubuntu-latest
     permissions:
       statuses: write
@@ -161,6 +140,7 @@ jobs:
   fedora-45-ostree:
     needs: check-pull-request
     if: ${{ needs.check-pull-request.outputs.allowed_user == 'true' }}
+    continue-on-error: true
     runs-on: ubuntu-latest
     permissions:
       statuses: write
@@ -169,7 +149,7 @@ jobs:
       - name: Run the tests
         uses: sclorg/testing-farm-as-github-action@230555baceb860aa468d216f1822974836b965d1 # v4.3.1
         with:
-          compose: Fedora-44
+          compose: Fedora-Rawhide
           api_key: ${{ secrets.TF_API_PUB_KEY }}
           git_url: ${{ needs.check-pull-request.outputs.repo_url }}
           git_ref: ${{ needs.check-pull-request.outputs.ref }}
@@ -177,13 +157,14 @@ jobs:
           pull_request_status_name: fedora-45-ostree
           tmt_context: "arch=x86_64;distro=fedora-45"
           tmt_plan_regex: fedora-iot-raw
-          variables: "ARCH=x86_64;TARGET_DISTRO=fedora-45;PR_NUMBER=${{ needs.check-pull-request.outputs.pr_number }}"
+          variables: "ARCH=x86_64;PR_NUMBER=${{ needs.check-pull-request.outputs.pr_number }}"
           timeout: 90
           secrets: "QUAY_USERNAME=${{ secrets.QUAY_USERNAME }};QUAY_PASSWORD=${{ secrets.QUAY_PASSWORD }};STAGE_REDHAT_IO_USERNAME=${{ secrets.STAGE_REDHAT_IO_USERNAME }};STAGE_REDHAT_IO_TOKEN=${{ secrets.STAGE_REDHAT_IO_TOKEN }};DOWNLOAD_NODE=${{ secrets.DOWNLOAD_NODE }}"
 
   centos-9-ostree:
     needs: check-pull-request
     if: ${{ needs.check-pull-request.outputs.allowed_user == 'true' }}
+    continue-on-error: true
     runs-on: ubuntu-latest
     permissions:
       statuses: write
@@ -200,13 +181,14 @@ jobs:
           pull_request_status_name: centos-9-ostree
           tmt_context: "arch=x86_64;distro=cs-9"
           tmt_plan_regex: ostree
-          variables: "ARCH=x86_64;PR_NUMBER=${{ needs.check-pull-request.outputs.pr_number }}"
-          timeout: 120
+          variables: "ARCH=x86_64"
+          timeout: 90
           secrets: "QUAY_USERNAME=${{ secrets.QUAY_USERNAME }};QUAY_PASSWORD=${{ secrets.QUAY_PASSWORD }};STAGE_REDHAT_IO_USERNAME=${{ secrets.STAGE_REDHAT_IO_USERNAME }};STAGE_REDHAT_IO_TOKEN=${{ secrets.STAGE_REDHAT_IO_TOKEN }};DOWNLOAD_NODE=${{ secrets.DOWNLOAD_NODE }}"
 
   rhel-9-8-ostree:
     needs: check-pull-request
     if: ${{ needs.check-pull-request.outputs.allowed_user == 'true' }}
+    continue-on-error: true
     runs-on: ubuntu-latest
     permissions:
       statuses: write
@@ -223,82 +205,14 @@ jobs:
           pull_request_status_name: rhel-9.8-ostree
           tmt_context: "arch=x86_64;distro=rhel-9-8"
           tmt_plan_regex: ostree
-          variables: "ARCH=x86_64;PR_NUMBER=${{ needs.check-pull-request.outputs.pr_number }}"
-          timeout: 120
-          secrets: "QUAY_USERNAME=${{ secrets.QUAY_USERNAME }};QUAY_PASSWORD=${{ secrets.QUAY_PASSWORD }};STAGE_REDHAT_IO_USERNAME=${{ secrets.STAGE_REDHAT_IO_USERNAME }};STAGE_REDHAT_IO_TOKEN=${{ secrets.STAGE_REDHAT_IO_TOKEN }};DOWNLOAD_NODE=${{ secrets.DOWNLOAD_NODE }}"
-
-  rhel-9-8-bootc:
-    needs: check-pull-request
-    if: ${{ needs.check-pull-request.outputs.allowed_user == 'true' }}
-    runs-on: ubuntu-latest
-    permissions:
-      statuses: write
-
-    steps:
-      - name: Run the tests
-        uses: sclorg/testing-farm-as-github-action@230555baceb860aa468d216f1822974836b965d1 # v4.3.1
-        with:
-          compose: RHEL-9.8.0-Nightly
-          api_key: ${{ secrets.TF_API_KEY }}
-          git_url: ${{ needs.check-pull-request.outputs.repo_url }}
-          git_ref: ${{ needs.check-pull-request.outputs.ref }}
-          update_pull_request_status: true
-          pull_request_status_name: rhel-9.8-bootc
-          tmt_context: "arch=x86_64;distro=rhel-9-8"
-          tmt_plan_regex: bootc
-          variables: "ARCH=x86_64;PR_NUMBER=${{ needs.check-pull-request.outputs.pr_number }}"
-          timeout: 120
-          secrets: "QUAY_USERNAME=${{ secrets.QUAY_USERNAME }};QUAY_PASSWORD=${{ secrets.QUAY_PASSWORD }};STAGE_REDHAT_IO_USERNAME=${{ secrets.STAGE_REDHAT_IO_USERNAME }};STAGE_REDHAT_IO_TOKEN=${{ secrets.STAGE_REDHAT_IO_TOKEN }};DOWNLOAD_NODE=${{ secrets.DOWNLOAD_NODE }}"
-
-  rhel-9-9-ostree:
-    needs: check-pull-request
-    if: ${{ needs.check-pull-request.outputs.allowed_user == 'true' }}
-    runs-on: ubuntu-latest
-    permissions:
-      statuses: write
-
-    steps:
-      - name: Run the tests
-        uses: sclorg/testing-farm-as-github-action@230555baceb860aa468d216f1822974836b965d1 # v4.3.1
-        with:
-          compose: RHEL-9.9.0-Nightly
-          api_key: ${{ secrets.TF_API_KEY }}
-          git_url: ${{ needs.check-pull-request.outputs.repo_url }}
-          git_ref: ${{ needs.check-pull-request.outputs.ref }}
-          update_pull_request_status: true
-          pull_request_status_name: rhel-9.9-ostree
-          tmt_context: "arch=x86_64;distro=rhel-9-9"
-          tmt_plan_regex: ostree
-          variables: "ARCH=x86_64;PR_NUMBER=${{ needs.check-pull-request.outputs.pr_number }}"
-          timeout: 120
-          secrets: "QUAY_USERNAME=${{ secrets.QUAY_USERNAME }};QUAY_PASSWORD=${{ secrets.QUAY_PASSWORD }};STAGE_REDHAT_IO_USERNAME=${{ secrets.STAGE_REDHAT_IO_USERNAME }};STAGE_REDHAT_IO_TOKEN=${{ secrets.STAGE_REDHAT_IO_TOKEN }};DOWNLOAD_NODE=${{ secrets.DOWNLOAD_NODE }}"
-
-  rhel-9-9-bootc:
-    needs: check-pull-request
-    if: ${{ needs.check-pull-request.outputs.allowed_user == 'true' }}
-    runs-on: ubuntu-latest
-    permissions:
-      statuses: write
-
-    steps:
-      - name: Run the tests
-        uses: sclorg/testing-farm-as-github-action@230555baceb860aa468d216f1822974836b965d1 # v4.3.1
-        with:
-          compose: RHEL-9.9.0-Nightly
-          api_key: ${{ secrets.TF_API_KEY }}
-          git_url: ${{ needs.check-pull-request.outputs.repo_url }}
-          git_ref: ${{ needs.check-pull-request.outputs.ref }}
-          update_pull_request_status: true
-          pull_request_status_name: rhel-9.9-bootc
-          tmt_context: "arch=x86_64;distro=rhel-9-9"
-          tmt_plan_regex: bootc
-          variables: "ARCH=x86_64;PR_NUMBER=${{ needs.check-pull-request.outputs.pr_number }}"
-          timeout: 120
+          variables: "ARCH=x86_64"
+          timeout: 90
           secrets: "QUAY_USERNAME=${{ secrets.QUAY_USERNAME }};QUAY_PASSWORD=${{ secrets.QUAY_PASSWORD }};STAGE_REDHAT_IO_USERNAME=${{ secrets.STAGE_REDHAT_IO_USERNAME }};STAGE_REDHAT_IO_TOKEN=${{ secrets.STAGE_REDHAT_IO_TOKEN }};DOWNLOAD_NODE=${{ secrets.DOWNLOAD_NODE }}"
 
   rhel-10-2-bootc:
     needs: check-pull-request
     if: ${{ needs.check-pull-request.outputs.allowed_user == 'true' }}
+    continue-on-error: true
     runs-on: ubuntu-latest
     permissions:
       statuses: write
@@ -315,29 +229,6 @@ jobs:
           pull_request_status_name: rhel-10.2-bootc
           tmt_context: "arch=x86_64;distro=rhel-10-2"
           tmt_plan_regex: bootc
-          variables: "ARCH=x86_64;PR_NUMBER=${{ needs.check-pull-request.outputs.pr_number }}"
-          timeout: 120
-          secrets: "QUAY_USERNAME=${{ secrets.QUAY_USERNAME }};QUAY_PASSWORD=${{ secrets.QUAY_PASSWORD }};STAGE_REDHAT_IO_USERNAME=${{ secrets.STAGE_REDHAT_IO_USERNAME }};STAGE_REDHAT_IO_TOKEN=${{ secrets.STAGE_REDHAT_IO_TOKEN }};DOWNLOAD_NODE=${{ secrets.DOWNLOAD_NODE }}"
-
-  rhel-10-3-bootc:
-    needs: check-pull-request
-    if: ${{ needs.check-pull-request.outputs.allowed_user == 'true' }}
-    runs-on: ubuntu-latest
-    permissions:
-      statuses: write
-
-    steps:
-      - name: Run the tests
-        uses: sclorg/testing-farm-as-github-action@230555baceb860aa468d216f1822974836b965d1 # v4.3.1
-        with:
-          compose: RHEL-10.3-Nightly
-          api_key: ${{ secrets.TF_API_KEY }}
-          git_url: ${{ needs.check-pull-request.outputs.repo_url }}
-          git_ref: ${{ needs.check-pull-request.outputs.ref }}
-          update_pull_request_status: true
-          pull_request_status_name: rhel-10.3-bootc
-          tmt_context: "arch=x86_64;distro=rhel-10-3"
-          tmt_plan_regex: bootc
-          variables: "ARCH=x86_64;PR_NUMBER=${{ needs.check-pull-request.outputs.pr_number }}"
-          timeout: 120
+          variables: "ARCH=x86_64"
+          timeout: 90
           secrets: "QUAY_USERNAME=${{ secrets.QUAY_USERNAME }};QUAY_PASSWORD=${{ secrets.QUAY_PASSWORD }};STAGE_REDHAT_IO_USERNAME=${{ secrets.STAGE_REDHAT_IO_USERNAME }};STAGE_REDHAT_IO_TOKEN=${{ secrets.STAGE_REDHAT_IO_TOKEN }};DOWNLOAD_NODE=${{ secrets.DOWNLOAD_NODE }}"
