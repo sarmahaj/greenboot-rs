@@ -40,7 +40,7 @@ function greenprint {
 TEST_UUID=$(uuidgen)
 IMAGE_KEY="fedora-iot-raw-${TEST_UUID}"
 GUEST_ADDRESS=192.168.100.50
-SSH_USER="admin"
+SSH_USER="root"
 CONSOLE_LOG=/tmp/vm-console.log
 
 # Set up temporary files.
@@ -69,8 +69,8 @@ esac
 # Install required packages
 greenprint "Install required packages"
 sudo dnf install -y --nogpgcheck ansible-core qemu-img firewalld qemu-kvm \
-    libvirt-client libvirt-daemon-kvm libvirt-daemon virt-install \
-    libguestfs-tools-c xz
+    libvirt-client libvirt-daemon-kvm libvirt-daemon virt-install xz \
+    kpartx e2fsprogs
 
 # Avoid collection installation failure
 for _ in $(seq 0 30); do
@@ -154,8 +154,7 @@ clean_up () {
     greenprint "🧼 Cleaning up"
     sudo virsh destroy "${IMAGE_KEY}"
     sudo virsh undefine "${IMAGE_KEY}" --nvram
-    # Remove qcow2 file.
-    sudo virsh vol-delete --pool images "${IMAGE_KEY}.qcow2"
+    sudo rm -f "/var/lib/libvirt/images/${IMAGE_KEY}.raw"
     # Remomve tmp dir.
     sudo rm -rf "$TEMPDIR"
 }
@@ -193,32 +192,33 @@ greenprint "📦 Decompressing raw image"
 xz -d "${TEMPDIR}/${RAW_IMAGE_FILENAME}"
 RAW_IMAGE="${TEMPDIR}/${RAW_IMAGE_FILENAME%.xz}"
 
-greenprint "🔄 Converting raw image to qcow2"
-LIBVIRT_IMAGE_PATH=/var/lib/libvirt/images/${IMAGE_KEY}.qcow2
-sudo qemu-img convert -f raw -O qcow2 "${RAW_IMAGE}" "${LIBVIRT_IMAGE_PATH}"
-sudo qemu-img resize "${LIBVIRT_IMAGE_PATH}" 20G
+greenprint "📦 Preparing raw image"
+LIBVIRT_IMAGE_PATH=/var/lib/libvirt/images/${IMAGE_KEY}.raw
+sudo cp "${RAW_IMAGE}" "${LIBVIRT_IMAGE_PATH}"
 rm -f "${RAW_IMAGE}"
+sudo qemu-img resize "${LIBVIRT_IMAGE_PATH}" +10G
 
-##################################################
-##
-## Customize image with SSH key and user
-##
-##################################################
+greenprint "🔧 Resizing root partition"
+echo ", +" | sudo sfdisk -N 3 "${LIBVIRT_IMAGE_PATH}"
 
-greenprint "🔧 Customizing image with virt-customize"
-sudo virt-customize -a "${LIBVIRT_IMAGE_PATH}" \
-    --run-command "useradd -m -G wheel ${SSH_USER} || true" \
-    --run-command "echo '${SSH_USER} ALL=(ALL) NOPASSWD: ALL' >> /etc/sudoers" \
-    --mkdir "/home/${SSH_USER}/.ssh" \
-    --upload "${SSH_KEY}.pub:/home/${SSH_USER}/.ssh/authorized_keys" \
-    --run-command "chown -R ${SSH_USER}:${SSH_USER} /home/${SSH_USER}/.ssh" \
-    --run-command "chmod 700 /home/${SSH_USER}/.ssh" \
-    --run-command "chmod 600 /home/${SSH_USER}/.ssh/authorized_keys" \
-    --selinux-relabel
+greenprint "🔑 Injecting SSH key via kpartx"
+sudo kpartx -av "${LIBVIRT_IMAGE_PATH}"
+LOOP_DEV=$(sudo kpartx -l "${LIBVIRT_IMAGE_PATH}" | head -1 | awk '{print $1}' | sed 's/p[0-9]*$//')
+ROOT_PART="/dev/mapper/${LOOP_DEV}p3"
 
-# Ensure SELinux is happy with our new images.
-greenprint "👿 Running restorecon on image directory"
-sudo restorecon -Rv /var/lib/libvirt/images/
+sudo e2fsck -f "${ROOT_PART}" -y
+sudo resize2fs "${ROOT_PART}"
+
+MOUNT_DIR="${TEMPDIR}/root"
+mkdir -p "${MOUNT_DIR}"
+sudo mount "${ROOT_PART}" "${MOUNT_DIR}"
+
+sudo mkdir -p "${MOUNT_DIR}/ostree/deploy/fedora-iot/var/roothome/.ssh"
+cat "${SSH_KEY}.pub" | sudo tee -a "${MOUNT_DIR}/ostree/deploy/fedora-iot/var/roothome/.ssh/authorized_keys"
+sudo chmod -R u=rwX,o=,g= "${MOUNT_DIR}/ostree/deploy/fedora-iot/var/roothome/.ssh/"
+
+sudo umount "${MOUNT_DIR}"
+sudo kpartx -dv "${LIBVIRT_IMAGE_PATH}"
 
 ##################################################
 ##
@@ -228,7 +228,7 @@ sudo restorecon -Rv /var/lib/libvirt/images/
 
 greenprint "🚀 Installing VM from raw image"
 sudo virt-install  --name="${IMAGE_KEY}"\
-                   --disk path="${LIBVIRT_IMAGE_PATH}",format=qcow2 \
+                   --disk path="${LIBVIRT_IMAGE_PATH}",format=raw \
                    --ram 4096 \
                    --vcpus 2 \
                    --network network=integration,mac=34:49:22:B0:83:30 \
@@ -288,9 +288,13 @@ if [[ $copr_result != 0 ]]; then
     exit 1
 fi
 
+greenprint "📦 Downloading greenboot RPMs from Copr"
+ssh "${SSH_OPTIONS[@]}" -i "${SSH_KEY}" "${SSH_USER}@${GUEST_ADDRESS}" \
+    "dnf download --destdir /tmp/greenboot-rpms greenboot greenboot-default-health-checks"
+
 greenprint "📦 Replacing greenboot packages with PR build"
 ssh "${SSH_OPTIONS[@]}" -i "${SSH_KEY}" "${SSH_USER}@${GUEST_ADDRESS}" \
-    "sudo rpm-ostree override replace greenboot greenboot-default-health-checks"
+    "sudo rpm-ostree override replace /tmp/greenboot-rpms/*.rpm"
 
 greenprint "🔄 Rebooting to activate new deployment"
 ssh "${SSH_OPTIONS[@]}" -i "${SSH_KEY}" "${SSH_USER}@${GUEST_ADDRESS}" \
