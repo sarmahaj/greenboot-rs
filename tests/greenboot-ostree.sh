@@ -397,7 +397,7 @@ text
 rootpw --lock --iscrypted locked
 network --bootproto=dhcp --device=link --activate --onboot=on
 zerombr
-clearpart --all --initlabel --disklabel=msdos
+clearpart --all --initlabel --disklabel=gpt
 autopart --nohome --noswap --type=plain
 ostreesetup --nogpg --osname=${OS_NAME} --remote=${OS_NAME} --url=${PROD_REPO_URL} --ref=${OSTREE_REF}
 poweroff
