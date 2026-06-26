@@ -266,10 +266,13 @@ build_image() {
     while true; do
         sudo composer-cli --json compose info "${COMPOSE_ID}" | tee "$COMPOSE_INFO" > /dev/null
 
-        COMPOSE_STATUS=$(jq -r '.[0].body.queue_status' "$COMPOSE_INFO")
+        # Handle both v1 (CentOS/RHEL) and v2 (Fedora) API formats
+        COMPOSE_STATUS=$(jq -r '.[].body | (.queue_status // .image_status?.status) | select(. != null)' "$COMPOSE_INFO")
 
         # Is the compose finished?
-        if [[ $COMPOSE_STATUS != RUNNING ]] && [[ $COMPOSE_STATUS != WAITING ]]; then
+        # v1: RUNNING/WAITING/FINISHED/FAILED  v2: building/pending/success/failure
+        if [[ $COMPOSE_STATUS != RUNNING ]] && [[ $COMPOSE_STATUS != WAITING ]] \
+            && [[ $COMPOSE_STATUS != building ]] && [[ $COMPOSE_STATUS != pending ]]; then
             break
         fi
 
@@ -283,7 +286,7 @@ build_image() {
     get_compose_metadata "$COMPOSE_ID"
 
     # Did the compose finish with success?
-    if [[ $COMPOSE_STATUS != FINISHED ]]; then
+    if [[ $COMPOSE_STATUS != FINISHED ]] && [[ $COMPOSE_STATUS != success ]]; then
         echo "Something went wrong with the compose. 😢"
         exit 1
     fi
