@@ -87,13 +87,13 @@ case "${ID}-${VERSION_ID}" in
         OS_VARIANT="centos-stream9"
         BOOT_ARGS="uefi,firmware.feature0.name=secure-boot,firmware.feature0.enabled=no"
         CURRENT_COMPOSE_CS9=$(curl -s "https://composes.stream.centos.org/production/" | grep -ioE ">CentOS-Stream-9-.*/<" | tr -d '>/<' | tail -1)
-        BOOT_LOCATION="https://composes.stream.centos.org/production/${CURRENT_COMPOSE_CS9}/compose/BaseOS/x86_64/os/"
+        BOOT_LOCATION="https://composes.stream.centos.org/production/${CURRENT_COMPOSE_CS9}/compose/BaseOS/${ARCH}/os/"
         sudo cp files/centos-stream-9.json /etc/osbuild-composer/repositories/centos-9.json;;
     "rhel-9.8")
         OSTREE_REF="rhel/9/${ARCH}/edge"
         OS_VARIANT="rhel9-unknown"
         BOOT_ARGS="uefi"
-        BOOT_LOCATION="http://${DOWNLOAD_NODE}/rhel-9/nightly/RHEL-9/latest-RHEL-9.8.0/compose/BaseOS/x86_64/os/"
+        BOOT_LOCATION="http://${DOWNLOAD_NODE}/rhel-9/nightly/RHEL-9/latest-RHEL-9.8.0/compose/BaseOS/${ARCH}/os/"
         sed "s/REPLACE_ME_HERE/${DOWNLOAD_NODE}/g" files/rhel-9-8-0.json | sudo tee /etc/osbuild-composer/repositories/rhel-98.json > /dev/null;;
     *)
         echo "unsupported distro: ${ID}-${VERSION_ID}"
@@ -105,7 +105,7 @@ greenprint "Building greenboot packages"
 pushd .. && \
 make rpm
 mkdir -p /var/www/html/packages
-cp rpmbuild/RPMS/x86_64/*.rpm /var/www/html/packages/
+cp rpmbuild/RPMS/"${ARCH}"/*.rpm /var/www/html/packages/
 sudo createrepo_c /var/www/html/packages
 sudo restorecon -Rv /var/www/html/packages && popd
 
@@ -428,8 +428,8 @@ greenprint "🛃 Copying binary and script files to edge vm"
 ssh "${SSH_OPTIONS[@]}" -i "${SSH_KEY}" "${SSH_USER}@${GUEST_ADDRESS}" "sudo mkdir -p /etc/greenboot/red.d /etc/greenboot/green.d"
 
 # Copy all files to temp directory first (all at once)
-scp "${SSH_OPTIONS[@]}" -i "${SSH_KEY}" ../testing_assets/failing_binary "${SSH_USER}@${GUEST_ADDRESS}":/tmp/ && \
-scp "${SSH_OPTIONS[@]}" -i "${SSH_KEY}" ../testing_assets/passing_binary "${SSH_USER}@${GUEST_ADDRESS}":/tmp/ && \
+scp "${SSH_OPTIONS[@]}" -i "${SSH_KEY}" ../testing_assets/failing_binary."${ARCH}" "${SSH_USER}@${GUEST_ADDRESS}":/tmp/failing_binary && \
+scp "${SSH_OPTIONS[@]}" -i "${SSH_KEY}" ../testing_assets/passing_binary."${ARCH}" "${SSH_USER}@${GUEST_ADDRESS}":/tmp/passing_binary && \
 scp "${SSH_OPTIONS[@]}" -i "${SSH_KEY}" ../testing_assets/failing_script.sh "${SSH_USER}@${GUEST_ADDRESS}":/tmp/ && \
 scp "${SSH_OPTIONS[@]}" -i "${SSH_KEY}" ../testing_assets/passing_script.sh "${SSH_USER}@${GUEST_ADDRESS}":/tmp/
 

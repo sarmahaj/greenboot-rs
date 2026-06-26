@@ -1,6 +1,8 @@
 #!/bin/bash
 set -euox pipefail
 
+ARCH=$(uname -m)
+
 # Dumps details about the instance running the CI job.
 echo -e "\033[0;36m"
 cat << EOF
@@ -181,11 +183,11 @@ fi
 greenprint "Building greenboot packages"
 pushd .. && \
 make rpm
-cp rpmbuild/RPMS/x86_64/*.rpm tests/
+cp rpmbuild/RPMS/"${ARCH}"/*.rpm tests/
 cp testing_assets/passing_script.sh tests/
-cp testing_assets/passing_binary tests/
+cp testing_assets/passing_binary."${ARCH}" tests/passing_binary
 cp testing_assets/failing_script.sh tests/
-cp testing_assets/failing_binary tests/ && popd
+cp testing_assets/failing_binary."${ARCH}" tests/failing_binary && popd
 
 ###########################################################
 ##
