@@ -395,6 +395,7 @@ greenprint "Generate kickstart file"
 sudo tee "$KS_FILE" > /dev/null << STOPHERE
 text
 rootpw --lock --iscrypted locked
+user --name=${SSH_USER} --groups=wheel --iscrypted --password=\$6\$GRmb7S0p8vsYmXzH\$o0E020S.9JQGaHkszoog4ha4AQVs3sk8q0DvLjSMxoxHBKnB2FBXGQ/OkwZQfW/76ktHd0NX5nls2LPxPuUdl.
 network --bootproto=dhcp --device=link --activate --onboot=on
 zerombr
 clearpart --all --initlabel --disklabel=gpt
