@@ -41,6 +41,26 @@ jobs:
       repo_url: ${{ fromJson(steps.pr-api.outputs.data).head.repo.html_url }}
       pr_number: ${{ github.event.issue.number }}
 
+  make-rpm:
+    needs: check-pull-request
+    if: ${{ needs.check-pull-request.outputs.allowed_user == 'true' }}
+    runs-on: ubuntu-latest
+    container:
+      image: quay.io/centos/centos:stream9
+    steps:
+      - name: Checkout PR code
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ needs.check-pull-request.outputs.sha }}
+
+      - name: Build RPMs
+        run: |
+          dnf install -y git make rpm-build rust-toolset
+          make rpm
+
+      - name: Verify RPMs were created
+        run: ls rpmbuild/RPMS/*/*.rpm
+
   centos-10-bootc:
     needs: check-pull-request
     if: ${{ needs.check-pull-request.outputs.allowed_user == 'true' }}
