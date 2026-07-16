@@ -193,7 +193,7 @@ podman login quay.io -u ${QUAY_USERNAME} -p ${QUAY_PASSWORD}
 podman login registry.stage.redhat.io -u ${STAGE_REDHAT_IO_USERNAME} -p ${STAGE_REDHAT_IO_TOKEN}
 tee Containerfile > /dev/null << EOF
 FROM ${BASE_IMAGE_URL}
-RUN dnf install -y 'dnf-command(copr)' && \
+RUN (dnf install -y 'dnf5-command(copr)' || dnf install -y 'dnf-command(copr)') && \
     dnf copr enable -y packit/fedora-iot-greenboot-rs-${PR_NUMBER} && \
     dnf install -y greenboot greenboot-default-health-checks && \
     systemctl enable greenboot-healthcheck.service
