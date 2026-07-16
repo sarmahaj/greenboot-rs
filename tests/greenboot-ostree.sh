@@ -109,6 +109,22 @@ case "${ID}-${VERSION_ID}" in
         exit 1;;
 esac
 
+# Check ostree_key permissions
+KEY_PERMISSION_PRE=$(stat -L -c "%a %G %U" key/ostree_key | grep -oP '\d+' | head -n 1)
+echo -e "${KEY_PERMISSION_PRE}"
+if [[ "${KEY_PERMISSION_PRE}" != "600" ]]; then
+   greenprint "💡 File permissions too open...Changing to 600"
+   chmod 600 ./key/ostree_key
+fi
+
+# Start httpd server as prod ostree repo
+greenprint "Start httpd service"
+sudo systemctl enable --now httpd.service
+
+# Start osbuild-composer.socket
+greenprint "Start osbuild-composer.socket"
+sudo systemctl enable --now osbuild-composer.socket
+
 # Add Copr repo as osbuild-composer source for greenboot PR builds
 greenprint "Adding Copr source for greenboot PR #${PR_NUMBER}"
 sudo tee /tmp/greenboot-copr.toml > /dev/null << EOF
@@ -133,22 +149,6 @@ if [ "$copr_added" = false ]; then
     echo "Failed to add Copr source after 30 attempts."
     exit 1
 fi
-
-# Check ostree_key permissions
-KEY_PERMISSION_PRE=$(stat -L -c "%a %G %U" key/ostree_key | grep -oP '\d+' | head -n 1)
-echo -e "${KEY_PERMISSION_PRE}"
-if [[ "${KEY_PERMISSION_PRE}" != "600" ]]; then
-   greenprint "💡 File permissions too open...Changing to 600"
-   chmod 600 ./key/ostree_key
-fi
-
-# Start httpd server as prod ostree repo
-greenprint "Start httpd service"
-sudo systemctl enable --now httpd.service
-
-# Start osbuild-composer.socket
-greenprint "Start osbuild-composer.socket"
-sudo systemctl enable --now osbuild-composer.socket
 
 # Start firewalld
 greenprint "Start firewalld"
