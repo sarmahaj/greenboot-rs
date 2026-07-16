@@ -1,6 +1,8 @@
 #!/bin/bash
 set -euox pipefail
 
+ARCH=$(uname -m)
+
 # Dumps details about the instance running the CI job.
 echo -e "\033[0;36m"
 cat << EOF
@@ -30,6 +32,7 @@ SSH_KEY=key/ostree_key
 SSH_KEY_PUB=$(cat "${SSH_KEY}".pub)
 EDGE_USER=core
 EDGE_USER_PASSWORD=foobar
+CONSOLE_LOG=/tmp/vm-console.log
 
 case "${ID}-${VERSION_ID}" in
     "fedora-43")
@@ -37,35 +40,30 @@ case "${ID}-${VERSION_ID}" in
         BASE_IMAGE_URL="quay.io/fedora/fedora-bootc:43"
         BIB_URL="quay.io/centos-bootc/bootc-image-builder:latest"
         BOOT_ARGS="uefi"
-        sudo dnf install -y rpmbuild rust-packaging
         ;;
     "fedora-44")
         OS_VARIANT="fedora-unknown"
         BASE_IMAGE_URL="quay.io/fedora/fedora-bootc:44"
         BIB_URL="quay.io/centos-bootc/bootc-image-builder:latest"
         BOOT_ARGS="uefi"
-        sudo dnf install -y rpmbuild rust-packaging
         ;;
     "fedora-45")
         OS_VARIANT="fedora-rawhide"
         BASE_IMAGE_URL="quay.io/fedora/fedora-bootc:rawhide"
         BIB_URL="quay.io/centos-bootc/bootc-image-builder:latest"
         BOOT_ARGS="uefi"
-        sudo dnf install -y rpmbuild rust-packaging
         ;;
     "centos-10")
         OS_VARIANT="centos-stream9"
         BASE_IMAGE_URL="quay.io/centos-bootc/centos-bootc:stream10"
         BIB_URL="quay.io/centos-bootc/bootc-image-builder:latest"
         BOOT_ARGS="uefi,firmware.feature0.name=secure-boot,firmware.feature0.enabled=no"
-        sudo dnf install -y make rpm-build rust-toolset
         ;;
     "rhel-9.8")
         OS_VARIANT="rhel9-unknown"
         BASE_IMAGE_URL="registry.stage.redhat.io/rhel9/rhel-bootc:9.8"
         BIB_URL="registry.stage.redhat.io/rhel9/bootc-image-builder:9.8"
         BOOT_ARGS="uefi"
-        sudo dnf install -y make rpm-build rust-toolset
         sed -i "s/REPLACE_ME_HERE/${DOWNLOAD_NODE}/g" files/rhel-9-8.repo
         ;;
     "rhel-10.2")
@@ -73,7 +71,6 @@ case "${ID}-${VERSION_ID}" in
         BASE_IMAGE_URL="registry.stage.redhat.io/rhel10/rhel-bootc:10.2"
         BIB_URL="registry.stage.redhat.io/rhel10/bootc-image-builder:10.2"
         BOOT_ARGS="uefi"
-        sudo dnf install -y make rpm-build rust-toolset
         sed -i "s/REPLACE_ME_HERE/${DOWNLOAD_NODE}/g" files/rhel-10-2.repo
         ;;
     *)
@@ -112,7 +109,7 @@ wait_for_ssh_up () {
 ##
 ###########################################################
 greenprint "Installing required packages"
-sudo dnf install -y podman qemu-img firewalld qemu-kvm libvirt-client libvirt-daemon-kvm libvirt-daemon virt-install rpmdevtools ansible-core cargo lorax gobject-introspection
+sudo dnf install -y podman qemu-img firewalld qemu-kvm libvirt-client libvirt-daemon-kvm libvirt-daemon virt-install ansible-core lorax gobject-introspection
 ansible-galaxy collection install community.general
 
 # Start firewalld
@@ -174,17 +171,17 @@ fi
 
 ###########################################################
 ##
-## Build greenboot rpm packages
+## Copy test assets
 ##
 ###########################################################
-greenprint "Building greenboot packages"
-pushd .. && \
-make rpm
-cp rpmbuild/RPMS/x86_64/*.rpm tests/
-cp testing_assets/passing_script.sh tests/
-cp testing_assets/passing_binary tests/
-cp testing_assets/failing_script.sh tests/
-cp testing_assets/failing_binary tests/ && popd
+greenprint "Copying test assets"
+(
+    cd ..
+    cp testing_assets/passing_script.sh tests/
+    cp testing_assets/passing_binary tests/
+    cp testing_assets/failing_script.sh tests/
+    cp testing_assets/failing_binary tests/
+)
 
 ###########################################################
 ##
@@ -196,10 +193,9 @@ podman login quay.io -u ${QUAY_USERNAME} -p ${QUAY_PASSWORD}
 podman login registry.stage.redhat.io -u ${STAGE_REDHAT_IO_USERNAME} -p ${STAGE_REDHAT_IO_TOKEN}
 tee Containerfile > /dev/null << EOF
 FROM ${BASE_IMAGE_URL}
-# Copy the local RPM files into the container
-COPY greenboot-*.rpm /tmp/
-RUN dnf install -y \
-    /tmp/greenboot-*.rpm && \
+RUN dnf install -y 'dnf-command(copr)' && \
+    dnf copr enable -y packit/fedora-iot-greenboot-rs-${PR_NUMBER} && \
+    dnf install -y greenboot greenboot-default-health-checks && \
     systemctl enable greenboot-healthcheck.service
 RUN sed -i "s/GREENBOOT_MAX_BOOT_ATTEMPTS=3/GREENBOOT_MAX_BOOT_ATTEMPTS=5/g" /etc/greenboot/greenboot.conf
 RUN sed -i 's#DISABLED_HEALTHCHECKS=()#DISABLED_HEALTHCHECKS=("01_repository_dns_check.sh" "not_exit.sh")#g' /etc/greenboot/greenboot.conf
@@ -216,8 +212,6 @@ COPY failing_script.sh /etc/greenboot/red.d
 
 COPY passing_binary /etc/greenboot/check/required.d/
 COPY failing_binary /etc/greenboot/check/wanted.d/
-# Clean up by removing the local RPMs if desired
-RUN rm -f /tmp/greenboot-*.rpm
 EOF
 
 if [[ "${ID}-${VERSION_ID}" == "rhel-9.8" ]]; then
@@ -232,7 +226,22 @@ COPY files/rhel-10-2.repo /etc/yum.repos.d/rhel-10-2.repo
 EOF
 fi
 
-podman build  --retry=5 --retry-delay=10s -t quay.io/${QUAY_USERNAME}/greenboot-bootc:${TEST_UUID} -f Containerfile .
+greenprint "Building container (retrying until Copr build is available)"
+build_success=false
+for attempt in $(seq 1 10); do
+    if podman build --retry=5 --retry-delay=10s -t quay.io/${QUAY_USERNAME}/greenboot-bootc:${TEST_UUID} -f Containerfile .; then
+        build_success=true
+        break
+    fi
+    greenprint "Container build attempt ${attempt}/10 failed, retrying in 60s..."
+    sleep 60
+done
+
+if [ "$build_success" = false ]; then
+    echo "Container build failed after 10 attempts."
+    exit 1
+fi
+
 greenprint "Pushing bootc container to quay.io"
 podman push quay.io/${QUAY_USERNAME}/greenboot-bootc:${TEST_UUID}
 
@@ -329,7 +338,8 @@ sudo virt-install  --name="${TEST_UUID}-uefi"\
                    --os-variant ${OS_VARIANT} \
                    --cdrom "/var/lib/libvirt/images/install.iso" \
                    --boot ${BOOT_ARGS} \
-                   --nographics \
+                   --graphics none \
+                   --serial file,path=${CONSOLE_LOG} \
                    --noautoconsole \
                    --wait=-1 \
                    --noreboot
@@ -346,6 +356,14 @@ for _ in $(seq 0 30); do
     fi
     sleep 10
 done
+
+if [[ $RESULTS != 1 ]]; then
+    greenprint "SSH failed on initial boot — collecting VM diagnostics"
+    sudo virsh domstate "${TEST_UUID}-uefi" || true
+    sudo virsh net-dhcp-leases integration || true
+    greenprint "VM console output (last 100 lines):"
+    sudo tail -100 ${CONSOLE_LOG} 2>/dev/null || true
+fi
 check_result
 
 ###########################################################
@@ -386,6 +404,14 @@ for _ in $(seq 0 30); do
     fi
     sleep 10
 done
+
+if [[ $RESULTS != 1 ]]; then
+    greenprint "SSH failed after upgrade — collecting VM diagnostics"
+    sudo virsh domstate "${TEST_UUID}-uefi" || true
+    sudo virsh net-dhcp-leases integration || true
+    greenprint "VM console output (last 100 lines):"
+    sudo tail -100 ${CONSOLE_LOG} 2>/dev/null || true
+fi
 check_result
 
 # Add instance IP address into /etc/ansible/hosts
