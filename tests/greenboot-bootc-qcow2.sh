@@ -34,6 +34,7 @@ EDGE_USER=core
 EDGE_USER_PASSWORD=foobar
 CONSOLE_LOG=/tmp/vm-console.log
 
+COPR_CHROOT=""
 case "${ID}-${VERSION_ID}" in
     "fedora-43")
         OS_VARIANT="fedora-unknown"
@@ -58,12 +59,14 @@ case "${ID}-${VERSION_ID}" in
         BASE_IMAGE_URL="quay.io/centos-bootc/centos-bootc:stream10"
         BIB_URL="quay.io/centos-bootc/bootc-image-builder:latest"
         BOOT_ARGS="uefi,firmware.feature0.name=secure-boot,firmware.feature0.enabled=no"
+        COPR_CHROOT="centos-stream-10-${ARCH}"
         ;;
     "rhel-9.8")
         OS_VARIANT="rhel9-unknown"
         BASE_IMAGE_URL="registry.stage.redhat.io/rhel9/rhel-bootc:9.8"
         BIB_URL="registry.stage.redhat.io/rhel9/bootc-image-builder:9.8"
         BOOT_ARGS="uefi"
+        COPR_CHROOT="centos-stream-9-${ARCH}"
         sed -i "s/REPLACE_ME_HERE/${DOWNLOAD_NODE}/g" files/rhel-9-8.repo
         ;;
     "rhel-10.2")
@@ -71,6 +74,7 @@ case "${ID}-${VERSION_ID}" in
         BASE_IMAGE_URL="registry.stage.redhat.io/rhel10/rhel-bootc:10.2"
         BIB_URL="registry.stage.redhat.io/rhel10/bootc-image-builder:10.2"
         BOOT_ARGS="uefi"
+        COPR_CHROOT="centos-stream-10-${ARCH}"
         sed -i "s/REPLACE_ME_HERE/${DOWNLOAD_NODE}/g" files/rhel-10-2.repo
         ;;
     *)
@@ -194,7 +198,7 @@ podman login registry.stage.redhat.io -u ${STAGE_REDHAT_IO_USERNAME} -p ${STAGE_
 tee Containerfile > /dev/null << EOF
 FROM ${BASE_IMAGE_URL}
 RUN (dnf install -y 'dnf5-command(copr)' || dnf install -y 'dnf-command(copr)') && \
-    dnf copr enable -y packit/fedora-iot-greenboot-rs-${PR_NUMBER} && \
+    dnf copr enable -y packit/fedora-iot-greenboot-rs-${PR_NUMBER} ${COPR_CHROOT} && \
     dnf install -y greenboot greenboot-default-health-checks && \
     systemctl enable greenboot-healthcheck.service
 RUN sed -i "s/GREENBOOT_MAX_BOOT_ATTEMPTS=3/GREENBOOT_MAX_BOOT_ATTEMPTS=5/g" /etc/greenboot/greenboot.conf
