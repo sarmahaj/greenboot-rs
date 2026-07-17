@@ -36,21 +36,15 @@ CONSOLE_LOG=/tmp/vm-console.log
 
 COPR_CHROOT=""
 case "${ID}-${VERSION_ID}" in
-    "fedora-43")
-        OS_VARIANT="fedora-unknown"
-        BASE_IMAGE_URL="quay.io/fedora/fedora-bootc:43"
-        BIB_URL="quay.io/centos-bootc/bootc-image-builder:latest"
-        BOOT_ARGS="uefi"
-        ;;
     "fedora-44")
         OS_VARIANT="fedora-unknown"
-        BASE_IMAGE_URL="quay.io/fedora/fedora-bootc:44"
+        BASE_IMAGE_URL="quay.io/fedora/fedora-iot:44"
         BIB_URL="quay.io/centos-bootc/bootc-image-builder:latest"
         BOOT_ARGS="uefi"
         ;;
     "fedora-45")
         OS_VARIANT="fedora-rawhide"
-        BASE_IMAGE_URL="quay.io/fedora/fedora-bootc:rawhide"
+        BASE_IMAGE_URL="quay.io/fedora/fedora-iot:rawhide"
         BIB_URL="quay.io/centos-bootc/bootc-image-builder:latest"
         BOOT_ARGS="uefi"
         ;;
