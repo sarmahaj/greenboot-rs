@@ -216,6 +216,13 @@ COPY failing_script.sh /etc/greenboot/red.d
 
 COPY passing_binary /etc/greenboot/check/required.d/
 COPY failing_binary /etc/greenboot/check/wanted.d/
+
+RUN useradd -m -G wheel ${EDGE_USER} && echo '${EDGE_USER}:${EDGE_USER_PASSWORD}' | chpasswd
+RUN mkdir -p /home/${EDGE_USER}/.ssh && \
+    echo '${SSH_KEY_PUB}' > /home/${EDGE_USER}/.ssh/authorized_keys && \
+    chmod 700 /home/${EDGE_USER}/.ssh && \
+    chmod 600 /home/${EDGE_USER}/.ssh/authorized_keys && \
+    chown -R ${EDGE_USER}:${EDGE_USER} /home/${EDGE_USER}/.ssh
 EOF
 
 if [[ "${ID}-${VERSION_ID}" == "rhel-9.8" ]]; then
@@ -257,18 +264,16 @@ podman push quay.io/${QUAY_USERNAME}/greenboot-bootc:${TEST_UUID}
 greenprint "Using BIB to convert container to anaconda iso"
 tee config.json > /dev/null << EOF
 {
-  "blueprint": {
-    "customizations": {
-      "user": [
-        {
-          "name": "${EDGE_USER}",
-          "password": "${EDGE_USER_PASSWORD}",
-          "key": "${SSH_KEY_PUB}",
-          "groups": [
-            "wheel"
-          ]
-        }
-      ]
+  "customizations": {
+    "installer": {
+      "kickstart": {
+        "contents": "text --non-interactive\nzerombr\nclearpart --all --initlabel --disklabel=gpt\nautopart --nohome --type=plain --fstype=xfs\nnetwork --bootproto=dhcp --device=link --activate --onboot=on\nbootloader --append=\"console=ttyS0,115200\"\npoweroff\n"
+      },
+      "modules": {
+        "disable": [
+          "org.fedoraproject.Anaconda.Modules.Users"
+        ]
+      }
     }
   }
 }
@@ -290,38 +295,8 @@ podman run \
     --use-librepo=true \
     quay.io/${QUAY_USERNAME}/greenboot-bootc:${TEST_UUID}
 
-###########################################################
-##
-## Generate kickstart file and mkksiso
-##
-###########################################################
-ISOMOUNT=$(mktemp -d)
-greenprint "Mounting install.iso -> $ISOMOUNT"
-sudo mount -v -o ro "output/bootiso/install.iso" "$ISOMOUNT"
-NEW_KS_FILE="${TEMPDIR}/bib.ks"
-greenprint "Default osbuild-base.ks"
-cat "${ISOMOUNT}/osbuild-base.ks"
-greenprint "Default osbuild.ks"
-cat "${ISOMOUNT}/osbuild.ks"
-
-greenprint "Preparing modified kickstart file"
-cat > "$NEW_KS_FILE" << EOFKS
-text
-$(cat "${ISOMOUNT}/osbuild-base.ks")
-$(cat "${ISOMOUNT}/osbuild.ks")
-EOFKS
-sed -i '/%include/d' "$NEW_KS_FILE"
-
-greenprint "Writing new ISO"
-sudo mkksiso -c "console=ttyS0,115200" --ks "$NEW_KS_FILE" "output/bootiso/install.iso" "/var/lib/libvirt/images/install.iso"
-
-greenprint "==== NEW KICKSTART FILE ===="
-cat "$NEW_KS_FILE"
-greenprint "============================"
-
-greenprint "Clean up ISO building environment"
-sudo umount -v "$ISOMOUNT"
-rm -rf "$ISOMOUNT"
+greenprint "Copying BIB ISO to libvirt images"
+sudo cp output/bootiso/install.iso /var/lib/libvirt/images/install.iso
 
 ###########################################################
 ##
