@@ -302,6 +302,9 @@ greenprint "💾 Create vm qcow2 files for ISO installation"
 LIBVIRT_IMAGE_PATH_UEFI=/var/lib/libvirt/images/${TEST_UUID}-disk.qcow2
 sudo qemu-img create -f qcow2 "/var/lib/libvirt/images/${TEST_UUID}-disk.qcow2" 10G
 sudo restorecon -Rv /var/lib/libvirt/images/
+ISO_LABEL=$(blkid -o value -s LABEL /var/lib/libvirt/images/install.iso)
+[[ -n "$ISO_LABEL" ]] || { greenprint "❌ ISO label is empty"; exit 1; }
+greenprint "ISO label: ${ISO_LABEL}"
 sudo virt-install  --name="${TEST_UUID}-uefi"\
                    --disk path="${LIBVIRT_IMAGE_PATH_UEFI}",format=qcow2 \
                    --ram 3072 \
@@ -309,7 +312,8 @@ sudo virt-install  --name="${TEST_UUID}-uefi"\
                    --network network=integration,mac=34:49:22:B0:83:30 \
                    --os-type linux \
                    --os-variant ${OS_VARIANT} \
-                   --cdrom "/var/lib/libvirt/images/install.iso" \
+                   --location "/var/lib/libvirt/images/install.iso",kernel=images/pxeboot/vmlinuz,initrd=images/pxeboot/initrd.img \
+                   --extra-args "console=ttyS0,115200 inst.stage2=hd:LABEL=${ISO_LABEL} inst.ks=hd:LABEL=${ISO_LABEL}:/osbuild.ks" \
                    --boot ${BOOT_ARGS} \
                    --graphics none \
                    --serial file,path=${CONSOLE_LOG} \
