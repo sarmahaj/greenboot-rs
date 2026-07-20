@@ -191,6 +191,21 @@ podman login quay.io -u ${QUAY_USERNAME} -p ${QUAY_PASSWORD}
 podman login registry.stage.redhat.io -u ${STAGE_REDHAT_IO_USERNAME} -p ${STAGE_REDHAT_IO_TOKEN}
 tee Containerfile > /dev/null << EOF
 FROM ${BASE_IMAGE_URL}
+EOF
+
+if [[ "${ID}-${VERSION_ID}" == "rhel-9.8" ]]; then
+    tee -a Containerfile >> /dev/null << EOF
+COPY files/rhel-9-8.repo /etc/yum.repos.d/rhel-9-8.repo
+EOF
+fi
+
+if [[ "${ID}-${VERSION_ID}" == "rhel-10.2" ]]; then
+    tee -a Containerfile >> /dev/null << EOF
+COPY files/rhel-10-2.repo /etc/yum.repos.d/rhel-10-2.repo
+EOF
+fi
+
+tee -a Containerfile >> /dev/null << EOF
 RUN (dnf install -y 'dnf5-command(copr)' || dnf install -y 'dnf-command(copr)') && \
     dnf copr enable -y packit/fedora-iot-greenboot-rs-${PR_NUMBER} ${COPR_CHROOT} && \
     dnf install -y greenboot greenboot-default-health-checks && \
@@ -218,18 +233,6 @@ RUN mkdir -p /home/${EDGE_USER}/.ssh && \
     chmod 600 /home/${EDGE_USER}/.ssh/authorized_keys && \
     chown -R ${EDGE_USER}:${EDGE_USER} /home/${EDGE_USER}/.ssh
 EOF
-
-if [[ "${ID}-${VERSION_ID}" == "rhel-9.8" ]]; then
-    tee -a Containerfile >> /dev/null << EOF
-COPY files/rhel-9-8.repo /etc/yum.repos.d/rhel-9-8.repo
-EOF
-fi
-
-if [[ "${ID}-${VERSION_ID}" == "rhel-10.2" ]]; then
-    tee -a Containerfile >> /dev/null << EOF
-COPY files/rhel-10-2.repo /etc/yum.repos.d/rhel-10-2.repo
-EOF
-fi
 
 greenprint "Building container (retrying until Copr build is available)"
 build_success=false
