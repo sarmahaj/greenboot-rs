@@ -346,7 +346,15 @@ done
 if [[ $RESULTS != 1 ]]; then
     greenprint "SSH failed on initial boot — collecting VM diagnostics"
     sudo virsh domstate "${TEST_UUID}-uefi" || true
+    sudo virsh domiflist "${TEST_UUID}-uefi" || true
     sudo virsh net-dhcp-leases integration || true
+    sudo ip addr show integration || true
+    greenprint "Firewall zone for integration bridge:"
+    sudo firewall-cmd --get-zone-of-interface=integration || true
+    greenprint "Connectivity test:"
+    ping -c 2 -W 2 192.168.100.50 || true
+    greenprint "Disk image info:"
+    qemu-img info "${LIBVIRT_IMAGE_PATH_UEFI}" || true
     greenprint "VM console output (last 100 lines):"
     sudo tail -100 ${CONSOLE_LOG} 2>/dev/null || true
 fi
