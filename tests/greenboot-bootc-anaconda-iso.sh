@@ -22,6 +22,9 @@ echo -e "\033[0m"
 
 # Get OS info
 source /etc/os-release
+if [[ -n "${TARGET_DISTRO:-}" ]]; then
+    IFS='-' read -r ID VERSION_ID <<< "${TARGET_DISTRO}"
+fi
 
 # Setup variables
 TEST_UUID=anaconda-$((1 + RANDOM % 1000000))

@@ -122,7 +122,7 @@ jobs:
       - name: Run the tests
         uses: sclorg/testing-farm-as-github-action@230555baceb860aa468d216f1822974836b965d1 # v4.3.1
         with:
-          compose: Fedora-Rawhide
+          compose: Fedora-44
           api_key: ${{ secrets.TF_API_PUB_KEY }}
           git_url: ${{ needs.check-pull-request.outputs.repo_url }}
           git_ref: ${{ needs.check-pull-request.outputs.ref }}
@@ -130,7 +130,7 @@ jobs:
           pull_request_status_name: fedora-45-bootc
           tmt_context: "arch=x86_64;distro=fedora-45"
           tmt_plan_regex: bootc
-          variables: "ARCH=x86_64;PR_NUMBER=${{ needs.check-pull-request.outputs.pr_number }}"
+          variables: "ARCH=x86_64;TARGET_DISTRO=fedora-45;PR_NUMBER=${{ needs.check-pull-request.outputs.pr_number }}"
           timeout: 90
           secrets: "QUAY_USERNAME=${{ secrets.QUAY_USERNAME }};QUAY_PASSWORD=${{ secrets.QUAY_PASSWORD }};STAGE_REDHAT_IO_USERNAME=${{ secrets.STAGE_REDHAT_IO_USERNAME }};STAGE_REDHAT_IO_TOKEN=${{ secrets.STAGE_REDHAT_IO_TOKEN }};DOWNLOAD_NODE=${{ secrets.DOWNLOAD_NODE }}"
 
