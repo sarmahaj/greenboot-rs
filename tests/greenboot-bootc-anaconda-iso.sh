@@ -114,6 +114,23 @@ ansible-galaxy collection install community.general
 greenprint "Start firewalld"
 sudo systemctl enable --now firewalld
 
+greenprint "Waiting for firewalld D-Bus interface to be ready"
+fw_timeout=30
+fw_elapsed=0
+until sudo firewall-cmd --state >/dev/null 2>&1; do
+    sleep 1
+    fw_elapsed=$((fw_elapsed + 1))
+    if ! systemctl is-active --quiet firewalld; then
+        echo "firewalld systemd unit is not active" >&2
+        sudo systemctl status firewalld --no-pager >&2 || true
+        exit 1
+    fi
+    if [[ ${fw_elapsed} -ge ${fw_timeout} ]]; then
+        echo "firewalld did not become ready after ${fw_timeout} seconds" >&2
+        exit 1
+    fi
+done
+
 # Check ostree_key permissions
 KEY_PERMISSION_PRE=$(stat -L -c "%a %G %U" key/ostree_key | grep -oP '\d+' | head -n 1)
 echo -e "${KEY_PERMISSION_PRE}"
