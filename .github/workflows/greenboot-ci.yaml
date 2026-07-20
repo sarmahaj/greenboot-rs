@@ -134,6 +134,54 @@ jobs:
           timeout: 90
           secrets: "QUAY_USERNAME=${{ secrets.QUAY_USERNAME }};QUAY_PASSWORD=${{ secrets.QUAY_PASSWORD }};STAGE_REDHAT_IO_USERNAME=${{ secrets.STAGE_REDHAT_IO_USERNAME }};STAGE_REDHAT_IO_TOKEN=${{ secrets.STAGE_REDHAT_IO_TOKEN }};DOWNLOAD_NODE=${{ secrets.DOWNLOAD_NODE }}"
 
+  fedora-44-ostree:
+    needs: check-pull-request
+    if: ${{ needs.check-pull-request.outputs.allowed_user == 'true' }}
+    continue-on-error: true
+    runs-on: ubuntu-latest
+    permissions:
+      statuses: write
+
+    steps:
+      - name: Run the tests
+        uses: sclorg/testing-farm-as-github-action@230555baceb860aa468d216f1822974836b965d1 # v4.3.1
+        with:
+          compose: Fedora-44
+          api_key: ${{ secrets.TF_API_PUB_KEY }}
+          git_url: ${{ needs.check-pull-request.outputs.repo_url }}
+          git_ref: ${{ needs.check-pull-request.outputs.ref }}
+          update_pull_request_status: true
+          pull_request_status_name: fedora-44-ostree
+          tmt_context: "arch=x86_64;distro=fedora-44"
+          tmt_plan_regex: fedora-iot-raw
+          variables: "ARCH=x86_64;PR_NUMBER=${{ needs.check-pull-request.outputs.pr_number }}"
+          timeout: 90
+          secrets: "QUAY_USERNAME=${{ secrets.QUAY_USERNAME }};QUAY_PASSWORD=${{ secrets.QUAY_PASSWORD }};STAGE_REDHAT_IO_USERNAME=${{ secrets.STAGE_REDHAT_IO_USERNAME }};STAGE_REDHAT_IO_TOKEN=${{ secrets.STAGE_REDHAT_IO_TOKEN }};DOWNLOAD_NODE=${{ secrets.DOWNLOAD_NODE }}"
+
+  fedora-45-ostree:
+    needs: check-pull-request
+    if: ${{ needs.check-pull-request.outputs.allowed_user == 'true' }}
+    continue-on-error: true
+    runs-on: ubuntu-latest
+    permissions:
+      statuses: write
+
+    steps:
+      - name: Run the tests
+        uses: sclorg/testing-farm-as-github-action@230555baceb860aa468d216f1822974836b965d1 # v4.3.1
+        with:
+          compose: Fedora-44
+          api_key: ${{ secrets.TF_API_PUB_KEY }}
+          git_url: ${{ needs.check-pull-request.outputs.repo_url }}
+          git_ref: ${{ needs.check-pull-request.outputs.ref }}
+          update_pull_request_status: true
+          pull_request_status_name: fedora-45-ostree
+          tmt_context: "arch=x86_64;distro=fedora-45"
+          tmt_plan_regex: fedora-iot-raw
+          variables: "ARCH=x86_64;TARGET_DISTRO=fedora-45;PR_NUMBER=${{ needs.check-pull-request.outputs.pr_number }}"
+          timeout: 90
+          secrets: "QUAY_USERNAME=${{ secrets.QUAY_USERNAME }};QUAY_PASSWORD=${{ secrets.QUAY_PASSWORD }};STAGE_REDHAT_IO_USERNAME=${{ secrets.STAGE_REDHAT_IO_USERNAME }};STAGE_REDHAT_IO_TOKEN=${{ secrets.STAGE_REDHAT_IO_TOKEN }};DOWNLOAD_NODE=${{ secrets.DOWNLOAD_NODE }}"
+
   centos-9-ostree:
     needs: check-pull-request
     if: ${{ needs.check-pull-request.outputs.allowed_user == 'true' }}
