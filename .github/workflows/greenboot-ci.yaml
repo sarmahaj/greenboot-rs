@@ -65,7 +65,6 @@ jobs:
   centos-10-bootc:
     needs: check-pull-request
     if: ${{ needs.check-pull-request.outputs.allowed_user == 'true' }}
-    continue-on-error: true
     runs-on: ubuntu-latest
     permissions:
       statuses: write
@@ -89,7 +88,6 @@ jobs:
   fedora-44-bootc:
     needs: check-pull-request
     if: ${{ needs.check-pull-request.outputs.allowed_user == 'true' }}
-    continue-on-error: true
     runs-on: ubuntu-latest
     permissions:
       statuses: write
@@ -113,7 +111,6 @@ jobs:
   fedora-45-bootc:
     needs: check-pull-request
     if: ${{ needs.check-pull-request.outputs.allowed_user == 'true' }}
-    continue-on-error: true
     runs-on: ubuntu-latest
     permissions:
       statuses: write
@@ -137,7 +134,6 @@ jobs:
   fedora-44-ostree:
     needs: check-pull-request
     if: ${{ needs.check-pull-request.outputs.allowed_user == 'true' }}
-    continue-on-error: true
     runs-on: ubuntu-latest
     permissions:
       statuses: write
@@ -161,7 +157,6 @@ jobs:
   fedora-45-ostree:
     needs: check-pull-request
     if: ${{ needs.check-pull-request.outputs.allowed_user == 'true' }}
-    continue-on-error: true
     runs-on: ubuntu-latest
     permissions:
       statuses: write
@@ -185,7 +180,6 @@ jobs:
   centos-9-ostree:
     needs: check-pull-request
     if: ${{ needs.check-pull-request.outputs.allowed_user == 'true' }}
-    continue-on-error: true
     runs-on: ubuntu-latest
     permissions:
       statuses: write
@@ -209,7 +203,6 @@ jobs:
   rhel-9-8-ostree:
     needs: check-pull-request
     if: ${{ needs.check-pull-request.outputs.allowed_user == 'true' }}
-    continue-on-error: true
     runs-on: ubuntu-latest
     permissions:
       statuses: write
@@ -233,7 +226,6 @@ jobs:
   rhel-10-2-bootc:
     needs: check-pull-request
     if: ${{ needs.check-pull-request.outputs.allowed_user == 'true' }}
-    continue-on-error: true
     runs-on: ubuntu-latest
     permissions:
       statuses: write
