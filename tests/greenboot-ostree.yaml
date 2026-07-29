@@ -7,7 +7,7 @@
 
   tasks:
     # current target host's IP address
-    - debug: var=ansible_all_ipv4_addresses
+    - debug: var=ansible_facts['all_ipv4_addresses']
     - debug: var=ansible_facts['distribution_version']
     - debug: var=ansible_facts['distribution']
     - debug: var=ansible_facts['architecture']
@@ -146,7 +146,7 @@
 
         - name: waits until instance is reachable
           wait_for:
-            host: "{{ ansible_all_ipv4_addresses[0] }}"
+            host: "{{ ansible_facts['all_ipv4_addresses'][0] }}"
             port: 22
             search_regex: OpenSSH
             delay: 10
