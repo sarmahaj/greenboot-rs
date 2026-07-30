@@ -330,7 +330,7 @@ ISO_LABEL=$(blkid -o value -s LABEL /var/lib/libvirt/images/install.iso)
 greenprint "ISO label: ${ISO_LABEL}"
 sudo virt-install  --name="${TEST_UUID}-uefi"\
                    --disk path="${LIBVIRT_IMAGE_PATH_UEFI}",format=qcow2 \
-                   --ram 3072 \
+                   --ram 8192 \
                    --vcpus 2 \
                    --network network=integration,mac=34:49:22:B0:83:30 \
                    --os-type linux \

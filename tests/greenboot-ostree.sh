@@ -432,7 +432,7 @@ sudo virt-install  --name="${IMAGE_KEY}"\
                    --initrd-inject="${KS_FILE}" \
                    --extra-args="inst.ks=file:/ks.cfg console=ttyS0,115200" \
                    --disk path="${LIBVIRT_IMAGE_PATH}",format=qcow2 \
-                   --ram 4096 \
+                   --ram 8192 \
                    --vcpus 2 \
                    --network network=integration,mac=34:49:22:B0:83:30 \
                    --os-variant ${OS_VARIANT} \
