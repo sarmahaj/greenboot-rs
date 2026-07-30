@@ -22,6 +22,9 @@ echo -e "\033[0m"
 
 # Get OS info
 source /etc/os-release
+if [[ -n "${TARGET_DISTRO:-}" ]]; then
+    IFS='-' read -r ID VERSION_ID <<< "${TARGET_DISTRO}"
+fi
 
 # Setup variables
 TEST_UUID=qcow2-$((1 + RANDOM % 1000000))
@@ -34,22 +37,17 @@ EDGE_USER=core
 EDGE_USER_PASSWORD=foobar
 CONSOLE_LOG=/tmp/vm-console.log
 
+COPR_CHROOT=""
 case "${ID}-${VERSION_ID}" in
-    "fedora-43")
-        OS_VARIANT="fedora-unknown"
-        BASE_IMAGE_URL="quay.io/fedora/fedora-bootc:43"
-        BIB_URL="quay.io/centos-bootc/bootc-image-builder:latest"
-        BOOT_ARGS="uefi"
-        ;;
     "fedora-44")
         OS_VARIANT="fedora-unknown"
-        BASE_IMAGE_URL="quay.io/fedora/fedora-bootc:44"
+        BASE_IMAGE_URL="quay.io/fedora/fedora-iot:44"
         BIB_URL="quay.io/centos-bootc/bootc-image-builder:latest"
         BOOT_ARGS="uefi"
         ;;
     "fedora-45")
         OS_VARIANT="fedora-rawhide"
-        BASE_IMAGE_URL="quay.io/fedora/fedora-bootc:rawhide"
+        BASE_IMAGE_URL="quay.io/fedora/fedora-iot:rawhide"
         BIB_URL="quay.io/centos-bootc/bootc-image-builder:latest"
         BOOT_ARGS="uefi"
         ;;
@@ -58,12 +56,14 @@ case "${ID}-${VERSION_ID}" in
         BASE_IMAGE_URL="quay.io/centos-bootc/centos-bootc:stream10"
         BIB_URL="quay.io/centos-bootc/bootc-image-builder:latest"
         BOOT_ARGS="uefi,firmware.feature0.name=secure-boot,firmware.feature0.enabled=no"
+        COPR_CHROOT="centos-stream-10-${ARCH}"
         ;;
     "rhel-9.8")
         OS_VARIANT="rhel9-unknown"
         BASE_IMAGE_URL="registry.stage.redhat.io/rhel9/rhel-bootc:9.8"
         BIB_URL="registry.stage.redhat.io/rhel9/bootc-image-builder:9.8"
         BOOT_ARGS="uefi"
+        COPR_CHROOT="centos-stream-9-${ARCH}"
         sed -i "s/REPLACE_ME_HERE/${DOWNLOAD_NODE}/g" files/rhel-9-8.repo
         ;;
     "rhel-10.2")
@@ -71,6 +71,7 @@ case "${ID}-${VERSION_ID}" in
         BASE_IMAGE_URL="registry.stage.redhat.io/rhel10/rhel-bootc:10.2"
         BIB_URL="registry.stage.redhat.io/rhel10/bootc-image-builder:10.2"
         BOOT_ARGS="uefi"
+        COPR_CHROOT="centos-stream-10-${ARCH}"
         sed -i "s/REPLACE_ME_HERE/${DOWNLOAD_NODE}/g" files/rhel-10-2.repo
         ;;
     *)
@@ -115,6 +116,23 @@ ansible-galaxy collection install community.general
 # Start firewalld
 greenprint "Start firewalld"
 sudo systemctl enable --now firewalld
+
+greenprint "Waiting for firewalld D-Bus interface to be ready"
+fw_timeout=30
+fw_elapsed=0
+until sudo firewall-cmd --state >/dev/null 2>&1; do
+    sleep 1
+    fw_elapsed=$((fw_elapsed + 1))
+    if ! systemctl is-active --quiet firewalld; then
+        echo "firewalld systemd unit is not active" >&2
+        sudo systemctl status firewalld --no-pager >&2 || true
+        exit 1
+    fi
+    if [[ ${fw_elapsed} -ge ${fw_timeout} ]]; then
+        echo "firewalld did not become ready after ${fw_timeout} seconds" >&2
+        exit 1
+    fi
+done
 
 # Check ostree_key permissions
 KEY_PERMISSION_PRE=$(stat -L -c "%a %G %U" key/ostree_key | grep -oP '\d+' | head -n 1)
@@ -193,8 +211,23 @@ podman login quay.io -u ${QUAY_USERNAME} -p ${QUAY_PASSWORD}
 podman login registry.stage.redhat.io -u ${STAGE_REDHAT_IO_USERNAME} -p ${STAGE_REDHAT_IO_TOKEN}
 tee Containerfile > /dev/null << EOF
 FROM ${BASE_IMAGE_URL}
-RUN dnf install -y 'dnf-command(copr)' && \
-    dnf copr enable -y packit/fedora-iot-greenboot-rs-${PR_NUMBER} && \
+EOF
+
+if [[ "${ID}-${VERSION_ID}" == "rhel-9.8" ]]; then
+    tee -a Containerfile >> /dev/null << EOF
+COPY files/rhel-9-8.repo /etc/yum.repos.d/rhel-9-8.repo
+EOF
+fi
+
+if [[ "${ID}-${VERSION_ID}" == "rhel-10.2" ]]; then
+    tee -a Containerfile >> /dev/null << EOF
+COPY files/rhel-10-2.repo /etc/yum.repos.d/rhel-10-2.repo
+EOF
+fi
+
+tee -a Containerfile >> /dev/null << EOF
+RUN (dnf install -y 'dnf5-command(copr)' || dnf install -y 'dnf-command(copr)') && \
+    dnf copr enable -y packit/fedora-iot-greenboot-rs-${PR_NUMBER} ${COPR_CHROOT} && \
     dnf install -y greenboot greenboot-default-health-checks && \
     systemctl enable greenboot-healthcheck.service
 RUN sed -i "s/GREENBOOT_MAX_BOOT_ATTEMPTS=3/GREENBOOT_MAX_BOOT_ATTEMPTS=5/g" /etc/greenboot/greenboot.conf
@@ -213,18 +246,6 @@ COPY failing_script.sh /etc/greenboot/red.d
 COPY passing_binary /etc/greenboot/check/required.d/
 COPY failing_binary /etc/greenboot/check/wanted.d/
 EOF
-
-if [[ "${ID}-${VERSION_ID}" == "rhel-9.8" ]]; then
-    tee -a Containerfile >> /dev/null << EOF
-COPY files/rhel-9-8.repo /etc/yum.repos.d/rhel-9-8.repo
-EOF
-fi
-
-if [[ "${ID}-${VERSION_ID}" == "rhel-10.2" ]]; then
-    tee -a Containerfile >> /dev/null << EOF
-COPY files/rhel-10-2.repo /etc/yum.repos.d/rhel-10-2.repo
-EOF
-fi
 
 greenprint "Building container (retrying until Copr build is available)"
 build_success=false
@@ -328,7 +349,15 @@ done
 if [[ $RESULTS != 1 ]]; then
     greenprint "SSH failed on initial boot — collecting VM diagnostics"
     sudo virsh domstate "${TEST_UUID}-uefi" || true
+    sudo virsh domiflist "${TEST_UUID}-uefi" || true
     sudo virsh net-dhcp-leases integration || true
+    sudo ip addr show integration || true
+    greenprint "Firewall zone for integration bridge:"
+    sudo firewall-cmd --get-zone-of-interface=integration || true
+    greenprint "Connectivity test:"
+    ping -c 2 -W 2 192.168.100.50 || true
+    greenprint "Disk image info:"
+    qemu-img info "${LIBVIRT_IMAGE_PATH_UEFI}" || true
     greenprint "VM console output (last 100 lines):"
     sudo tail -100 ${CONSOLE_LOG} 2>/dev/null || true
 fi
