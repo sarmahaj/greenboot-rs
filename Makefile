@@ -60,7 +60,11 @@ vendor:
 	[ -z "$$vendor_filterer_cmd" ] || rm -f $${vendor_filterer_cmd}; \
 	. /etc/os-release; \
 	if [[ "$$ID" = "fedora" ]] || [[ "$$ID" = "centos" ]]; then \
-		sudo dnf install -y pkgconf-pkg-config openssl-devel; \
+		if [ "$$(id -u)" -eq 0 ]; then \
+			dnf install -y pkgconf-pkg-config openssl-devel; \
+		else \
+			sudo dnf install -y pkgconf-pkg-config openssl-devel; \
+		fi; \
 	fi; \
 	cargo install --quiet cargo-vendor-filterer@0.5.16; \
 	for platform in $(PLATFORMS); do  \
