@@ -259,7 +259,15 @@ build_image() {
     # Prepare the blueprint for the compose.
     greenprint "📋 Preparing blueprint"
     sudo composer-cli blueprints push "$blueprint_file"
-    sudo composer-cli blueprints depsolve "$blueprint_name"
+    sudo composer-cli blueprints depsolve "$blueprint_name" | tee /tmp/depsolve-output.txt
+
+    # Verify greenboot is being pulled from Copr (should have PR-specific NVR)
+    greenprint "🔍 Verifying greenboot source"
+    if grep -i "greenboot" /tmp/depsolve-output.txt; then
+        greenprint "✅ greenboot package found in depsolve output"
+    else
+        greenprint "⚠️  greenboot not explicitly in depsolve (may be in base image)"
+    fi
 
     # Get worker unit file so we can watch the journal.
     WORKER_UNIT=$(sudo systemctl list-units | grep -o -E "osbuild.*worker.*\.service")
@@ -369,6 +377,14 @@ version = "*"
 
 [[packages]]
 name = "sssd"
+version = "*"
+
+[[packages]]
+name = "greenboot"
+version = "*"
+
+[[packages]]
+name = "greenboot-default-health-checks"
 version = "*"
 
 [customizations.services]
