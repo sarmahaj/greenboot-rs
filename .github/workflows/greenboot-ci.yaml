@@ -60,6 +60,7 @@ jobs:
       - name: Build RPMs
         run: |
           dnf install -y git make rpm-build rust-toolset
+          git config --global --add safe.directory /__w/greenboot-rs/greenboot-rs
           make rpm
 
       - name: Verify RPMs were created
