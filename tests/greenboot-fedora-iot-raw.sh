@@ -249,7 +249,7 @@ sudo kpartx -dv "${LIBVIRT_IMAGE_PATH}"
 greenprint "🚀 Installing VM from raw image"
 sudo virt-install  --name="${IMAGE_KEY}"\
                    --disk path="${LIBVIRT_IMAGE_PATH}",format=raw \
-                   --ram 4096 \
+                   --ram 8192 \
                    --vcpus 2 \
                    --network network=integration,mac=34:49:22:B0:83:30 \
                    --os-variant ${OS_VARIANT} \

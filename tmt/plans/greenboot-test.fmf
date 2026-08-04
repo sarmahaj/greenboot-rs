@@ -9,8 +9,10 @@ provision:
     virtualization:
       is-supported: true
     cpu:
-      processors: ">= 2"
-    memory: ">= 6 GB"
+      processors: ">= 4"
+    memory: ">= 16 GB"
+    disk:
+      - size: ">= 40 GB"
 
 /bootc-qcow2:
   summary: Test greenboot with bootc qcow2 image

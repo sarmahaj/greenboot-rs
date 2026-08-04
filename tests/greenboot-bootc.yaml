@@ -8,7 +8,7 @@
 
   tasks:
     # current target host's IP address
-    - debug: var=ansible_all_ipv4_addresses
+    - debug: var=ansible_facts['all_ipv4_addresses']
     - debug: var=ansible_facts['distribution_version']
     - debug: var=ansible_facts['distribution']
     - debug: var=ansible_facts['architecture']
