@@ -326,6 +326,7 @@ sudo virt-install  --name="${TEST_UUID}-uefi"\
                    --os-type linux \
                    --os-variant ${OS_VARIANT} \
                    --boot ${BOOT_ARGS} \
+                   --tpm none \
                    --graphics none \
                    --serial file,path=${CONSOLE_LOG} \
                    --noautoconsole \

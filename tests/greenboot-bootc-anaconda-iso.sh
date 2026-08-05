@@ -339,6 +339,7 @@ sudo virt-install  --name="${TEST_UUID}-uefi"\
                    --location "/var/lib/libvirt/images/install.iso",kernel=images/pxeboot/vmlinuz,initrd=images/pxeboot/initrd.img \
                    --extra-args "console=ttyS0,115200 inst.stage2=hd:LABEL=${ISO_LABEL} inst.ks=hd:LABEL=${ISO_LABEL}:/osbuild.ks" \
                    --boot ${BOOT_ARGS} \
+                   --tpm none \
                    --graphics none \
                    --serial file,path=${CONSOLE_LOG} \
                    --noautoconsole \
