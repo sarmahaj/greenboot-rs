@@ -178,18 +178,33 @@ fn check_previous_rollback() -> Result<bool> {
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
+        // Check if failure is due to missing previous boot (expected on first boot)
+        // Different systemd versions use different error messages:
+        // - systemd 255+ (RHEL 10.2): "No journal boot entry found for the specified boot"
+        // - systemd 252 (RHEL 9.8): "Data from the specified boot (-1) is not available: No such boot ID in journal"
+        if stderr.contains("No journal boot entry found for the specified boot")
+            || stderr.contains(
+                "Data from the specified boot (-1) is not available: No such boot ID in journal",
+            )
+        {
+            log::info!(
+                "No previous boot journal available (expected on first boot or systems with non-persistent journal). Skipping rollback check."
+            );
+            return Ok(false);
+        }
+        // For other failures, warn and continue in degraded mode
+        // greenboot can still function without rollback detection
         log::warn!(
-            "journalctl command failed with status: {}. Error: {}",
+            "journalctl command failed with status: {}. stderr: {}. Continuing without rollback detection.",
             output.status,
             stderr.trim()
         );
         return Ok(false);
     }
 
-    let journal_output =
-        String::from_utf8(output.stdout).context("Failed to parse journalctl output as UTF-8")?;
+    let journal_output = String::from_utf8_lossy(&output.stdout);
 
-    if journal_output.trim().is_empty() {
+    if journal_output.trim().is_empty() || journal_output.contains("-- No entries --") {
         log::debug!("No rollback service logs found in previous boot");
         return Ok(false);
     }
