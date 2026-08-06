@@ -228,7 +228,8 @@ fi
 tee -a Containerfile >> /dev/null << EOF
 RUN (dnf install -y 'dnf5-command(copr)' || dnf install -y 'dnf-command(copr)') && \
     dnf copr enable -y packit/fedora-iot-greenboot-rs-${PR_NUMBER} ${COPR_CHROOT} && \
-    dnf install -y greenboot greenboot-default-health-checks && \
+    dnf clean metadata && \
+    (dnf reinstall -y greenboot greenboot-default-health-checks || dnf install -y greenboot greenboot-default-health-checks) && \
     systemctl enable greenboot-healthcheck.service
 RUN sed -i "s/GREENBOOT_MAX_BOOT_ATTEMPTS=3/GREENBOOT_MAX_BOOT_ATTEMPTS=5/g" /etc/greenboot/greenboot.conf
 RUN sed -i 's#DISABLED_HEALTHCHECKS=()#DISABLED_HEALTHCHECKS=("01_repository_dns_check.sh" "not_exit.sh")#g' /etc/greenboot/greenboot.conf
@@ -325,6 +326,7 @@ sudo virt-install  --name="${TEST_UUID}-uefi"\
                    --os-type linux \
                    --os-variant ${OS_VARIANT} \
                    --boot ${BOOT_ARGS} \
+                   --tpm none \
                    --graphics none \
                    --serial file,path=${CONSOLE_LOG} \
                    --noautoconsole \

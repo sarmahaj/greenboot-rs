@@ -150,6 +150,30 @@ if [ "$copr_added" = false ]; then
     exit 1
 fi
 
+# Listing greenboot as a blueprint package (version = "*") is not enough to
+# guarantee it comes from Copr: dnf always installs the highest NEVRA across
+# all enabled repos, and Copr snapshot builds conventionally use a Release
+# starting at "0.<timestamp>...", the same convention official pre-GA/rebuilt
+# packages use. Whenever BaseOS/AppStream ships a greenboot release that
+# outranks the current Copr build, dnf silently installs the stock package
+# instead. Pin the exact version-release dnf resolves in the Copr repo so
+# there is only one candidate to resolve to, regardless of what other repos
+# offer. (Verified: neither `composer-cli sources add` nor a blueprint's
+# `[[customizations.repositories]]` priority/install_from affect depsolve at
+# build time -- those only shape the .repo files written into the resulting
+# image for its own future dnf use.)
+greenprint "Looking up exact greenboot NEVR from Copr build"
+GREENBOOT_COPR_NEVR=$(sudo dnf repoquery \
+    --repofrompath="greenboot-copr-lookup,${COPR_REPO_URL}" \
+    --disablerepo='*' --enablerepo=greenboot-copr-lookup \
+    --quiet --qf '%{version}-%{release}' --latest-limit=1 greenboot)
+
+if [ -z "$GREENBOOT_COPR_NEVR" ]; then
+    echo "Failed to resolve greenboot version-release from Copr repo ${COPR_REPO_URL}"
+    exit 1
+fi
+greenprint "Pinning greenboot to Copr build ${GREENBOOT_COPR_NEVR}"
+
 # Start firewalld
 greenprint "Start firewalld"
 sudo systemctl enable --now firewalld
@@ -259,7 +283,15 @@ build_image() {
     # Prepare the blueprint for the compose.
     greenprint "📋 Preparing blueprint"
     sudo composer-cli blueprints push "$blueprint_file"
-    sudo composer-cli blueprints depsolve "$blueprint_name"
+    sudo composer-cli blueprints depsolve "$blueprint_name" | tee /tmp/depsolve-output.txt
+
+    # Verify greenboot is being pulled from Copr (should have PR-specific NVR)
+    greenprint "🔍 Verifying greenboot source"
+    if grep -i "greenboot" /tmp/depsolve-output.txt; then
+        greenprint "✅ greenboot package found in depsolve output"
+    else
+        greenprint "⚠️  greenboot not explicitly in depsolve (may be in base image)"
+    fi
 
     # Get worker unit file so we can watch the journal.
     WORKER_UNIT=$(sudo systemctl list-units | grep -o -E "osbuild.*worker.*\.service")
@@ -371,6 +403,14 @@ version = "*"
 name = "sssd"
 version = "*"
 
+[[packages]]
+name = "greenboot"
+version = "${GREENBOOT_COPR_NEVR}"
+
+[[packages]]
+name = "greenboot-default-health-checks"
+version = "${GREENBOOT_COPR_NEVR}"
+
 [customizations.services]
 enabled = ["greenboot-healthcheck.service", "greenboot-set-rollback-trigger.service", "greenboot-success.target"]
 
@@ -437,6 +477,7 @@ sudo virt-install  --name="${IMAGE_KEY}"\
                    --network network=integration,mac=34:49:22:B0:83:30 \
                    --os-variant ${OS_VARIANT} \
                    --boot ${BOOT_ARGS} \
+                   --tpm none \
                    --location "${BOOT_LOCATION}" \
                    --graphics none \
                    --serial file,path=${CONSOLE_LOG} \

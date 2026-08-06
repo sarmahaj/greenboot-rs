@@ -119,6 +119,28 @@
           set_fact:
             failed_counter: "{{ failed_counter | int + 1 }}"
 
+    # case: check rollback detection still works on non-first boot
+    - name: check rollback detection works correctly on non-first boot
+      block:
+        - name: get greenboot-healthcheck log from current boot (post-rollback)
+          command: journalctl -b -0 -u greenboot-healthcheck.service --no-pager
+          become: yes
+          register: result_healthcheck_post_rollback
+
+        - assert:
+            that:
+              - "'FALLBACK BOOT DETECTED!' in result_healthcheck_post_rollback.stdout"
+            fail_msg: "Rollback detection failed on non-first boot"
+            success_msg: "Rollback correctly detected on non-first boot"
+
+      always:
+        - set_fact:
+            total_counter: "{{ total_counter | int + 1 }}"
+      rescue:
+        - name: failed count + 1
+          set_fact:
+            failed_counter: "{{ failed_counter | int + 1 }}"
+
     # case: check greenboot-set-rollback-trigger log at first boot
     - name: check greenboot-set-rollback-trigger at first boot
       block:
@@ -133,6 +155,34 @@
               - "'Dependency failed' not in result_greenboot_trigger_log.stdout"
             fail_msg: "Expected greenboot trigger log or systemd update log not found, or dependency failure found"
             success_msg: "Found expected log and no dependency failures"
+
+      always:
+        - set_fact:
+            total_counter: "{{ total_counter | int + 1 }}"
+      rescue:
+        - name: failed count + 1
+          set_fact:
+            failed_counter: "{{ failed_counter | int + 1 }}"
+
+    # case: check proper first boot handling
+    - name: check greenboot-healthcheck handles first boot correctly
+      block:
+        - name: get greenboot-healthcheck log from first boot
+          command: "journalctl -b 1 -u greenboot-healthcheck.service --no-pager"
+          become: yes
+          register: result_healthcheck_first_boot
+
+        - assert:
+            that:
+              - "'No previous boot journal available' in result_healthcheck_first_boot.stdout"
+            fail_msg: "Expected first boot message not found"
+            success_msg: "First boot correctly detected with appropriate message"
+
+        - assert:
+            that:
+              - "'FALLBACK BOOT DETECTED!' not in result_healthcheck_first_boot.stdout"
+            fail_msg: "False rollback detection on first boot"
+            success_msg: "No false rollback detection on first boot"
 
       always:
         - set_fact:
