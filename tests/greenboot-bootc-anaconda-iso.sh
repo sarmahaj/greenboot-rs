@@ -27,6 +27,7 @@ if [[ -n "${TARGET_DISTRO:-}" ]]; then
 fi
 
 # Setup variables
+ARCH=$(uname -m)
 TEST_UUID=anaconda-$((1 + RANDOM % 1000000))
 TEMPDIR=$(mktemp -d)
 GUEST_ADDRESS=192.168.100.50
@@ -38,6 +39,16 @@ EDGE_USER_PASSWORD=foobar
 CONSOLE_LOG=/tmp/vm-console.log
 
 COPR_CHROOT=""
+
+# RPM acquisition mode:
+#   If DOWNLOAD_NODE and COMPOSE_ID are both set -> download from compose
+#   Otherwise -> install greenboot from Copr (default)
+USE_COMPOSE_RPMS=false
+if [[ -n "${DOWNLOAD_NODE:-}" && -n "${COMPOSE_ID:-}" ]]; then
+    USE_COMPOSE_RPMS=true
+fi
+GREENBOOT_PACKAGES_URL=""
+
 case "${ID}-${VERSION_ID}" in
     "fedora-44")
         OS_VARIANT="fedora-unknown"
@@ -64,7 +75,27 @@ case "${ID}-${VERSION_ID}" in
         BIB_URL="registry.stage.redhat.io/rhel9/bootc-image-builder:9.8"
         BOOT_ARGS="uefi"
         COPR_CHROOT="centos-stream-9-${ARCH}"
+        { set +x; } 2>/dev/null
         sed -i "s/REPLACE_ME_HERE/${DOWNLOAD_NODE}/g" files/rhel-9-8.repo
+        sed -i "s/REPLACE_ARCH_HERE/${ARCH}/g" files/rhel-9-8.repo
+        if [[ "${USE_COMPOSE_RPMS}" == true ]]; then
+            GREENBOOT_PACKAGES_URL="https://${DOWNLOAD_NODE}/rhel-9/composes/RHEL-9/${COMPOSE_ID}/compose/AppStream/${ARCH}/os/Packages/"
+        fi
+        set -x
+        ;;
+    "rhel-9.9")
+        OS_VARIANT="rhel9-unknown"
+        BASE_IMAGE_URL="registry.stage.redhat.io/rhel9/rhel-bootc:9.9"
+        BIB_URL="registry.stage.redhat.io/rhel9/bootc-image-builder:9.9"
+        BOOT_ARGS="uefi"
+        COPR_CHROOT="centos-stream-9-${ARCH}"
+        { set +x; } 2>/dev/null
+        sed -i "s/REPLACE_ME_HERE/${DOWNLOAD_NODE}/g" files/rhel-9-9.repo
+        sed -i "s/REPLACE_ARCH_HERE/${ARCH}/g" files/rhel-9-9.repo
+        if [[ "${USE_COMPOSE_RPMS}" == true ]]; then
+            GREENBOOT_PACKAGES_URL="https://${DOWNLOAD_NODE}/rhel-9/composes/RHEL-9/${COMPOSE_ID}/compose/AppStream/${ARCH}/os/Packages/"
+        fi
+        set -x
         ;;
     "rhel-10.2")
         OS_VARIANT="rhel10-unknown"
@@ -72,7 +103,27 @@ case "${ID}-${VERSION_ID}" in
         BIB_URL="registry.stage.redhat.io/rhel10/bootc-image-builder:10.2"
         BOOT_ARGS="uefi"
         COPR_CHROOT="centos-stream-10-${ARCH}"
+        { set +x; } 2>/dev/null
         sed -i "s/REPLACE_ME_HERE/${DOWNLOAD_NODE}/g" files/rhel-10-2.repo
+        sed -i "s/REPLACE_ARCH_HERE/${ARCH}/g" files/rhel-10-2.repo
+        if [[ "${USE_COMPOSE_RPMS}" == true ]]; then
+            GREENBOOT_PACKAGES_URL="https://${DOWNLOAD_NODE}/rhel-10/composes/RHEL-10/${COMPOSE_ID}/compose/AppStream/${ARCH}/os/Packages/"
+        fi
+        set -x
+        ;;
+    "rhel-10.3")
+        OS_VARIANT="rhel10-unknown"
+        BASE_IMAGE_URL="registry.stage.redhat.io/rhel10/rhel-bootc:10.3"
+        BIB_URL="registry.stage.redhat.io/rhel10/bootc-image-builder:10.3"
+        BOOT_ARGS="uefi"
+        COPR_CHROOT="centos-stream-10-${ARCH}"
+        { set +x; } 2>/dev/null
+        sed -i "s/REPLACE_ME_HERE/${DOWNLOAD_NODE}/g" files/rhel-10-3.repo
+        sed -i "s/REPLACE_ARCH_HERE/${ARCH}/g" files/rhel-10-3.repo
+        if [[ "${USE_COMPOSE_RPMS}" == true ]]; then
+            GREENBOOT_PACKAGES_URL="https://${DOWNLOAD_NODE}/rhel-10/composes/RHEL-10/${COMPOSE_ID}/compose/AppStream/${ARCH}/os/Packages/"
+        fi
+        set -x
         ;;
     *)
         echo "unsupported distro: ${ID}-${VERSION_ID}"
@@ -203,6 +254,19 @@ greenprint "Copying test assets"
 
 ###########################################################
 ##
+## Optionally download greenboot rpm packages from compose
+##
+###########################################################
+if [[ "${USE_COMPOSE_RPMS}" == true && -n "${GREENBOOT_PACKAGES_URL}" ]]; then
+    greenprint "Downloading greenboot RPMs from compose"
+    rm -f greenboot-*.rpm
+    # source: tests/common/download-compose-rpms.sh
+    source "$(dirname "${BASH_SOURCE[0]}")/common/download-compose-rpms.sh"
+    download_compose_rpms "${GREENBOOT_PACKAGES_URL}" "."
+fi
+
+###########################################################
+##
 ## Build bootc container with greenboot installed
 ##
 ###########################################################
@@ -213,24 +277,49 @@ tee Containerfile > /dev/null << EOF
 FROM ${BASE_IMAGE_URL}
 EOF
 
-if [[ "${ID}-${VERSION_ID}" == "rhel-9.8" ]]; then
-    tee -a Containerfile >> /dev/null << EOF
+# RHEL repo is always needed: Copr path uses it for dnf deps,
+# anaconda-iso BIB uses it for depsolve
+case "${ID}-${VERSION_ID}" in
+    "rhel-9.8")
+        tee -a Containerfile > /dev/null << EOF
 COPY files/rhel-9-8.repo /etc/yum.repos.d/rhel-9-8.repo
 EOF
-fi
-
-if [[ "${ID}-${VERSION_ID}" == "rhel-10.2" ]]; then
-    tee -a Containerfile >> /dev/null << EOF
+        ;;
+    "rhel-9.9")
+        tee -a Containerfile > /dev/null << EOF
+COPY files/rhel-9-9.repo /etc/yum.repos.d/rhel-9-9.repo
+EOF
+        ;;
+    "rhel-10.2")
+        tee -a Containerfile > /dev/null << EOF
 COPY files/rhel-10-2.repo /etc/yum.repos.d/rhel-10-2.repo
 EOF
-fi
+        ;;
+    "rhel-10.3")
+        tee -a Containerfile > /dev/null << EOF
+COPY files/rhel-10-3.repo /etc/yum.repos.d/rhel-10-3.repo
+EOF
+        ;;
+esac
 
-tee -a Containerfile >> /dev/null << EOF
+if [[ "${USE_COMPOSE_RPMS}" == true && -n "${GREENBOOT_PACKAGES_URL}" ]]; then
+    tee -a Containerfile > /dev/null << EOF
+COPY greenboot-*.rpm /tmp/
+RUN dnf install -y /tmp/greenboot-*.rpm && \
+    rm -f /tmp/greenboot-*.rpm && \
+    systemctl enable greenboot-healthcheck.service
+EOF
+else
+    tee -a Containerfile > /dev/null << EOF
 RUN (dnf install -y 'dnf5-command(copr)' || dnf install -y 'dnf-command(copr)') && \
     dnf copr enable -y packit/fedora-iot-greenboot-rs-${PR_NUMBER} ${COPR_CHROOT} && \
     dnf clean metadata && \
     (dnf reinstall -y greenboot greenboot-default-health-checks || dnf install -y greenboot greenboot-default-health-checks) && \
     systemctl enable greenboot-healthcheck.service
+EOF
+fi
+
+tee -a Containerfile > /dev/null << EOF
 RUN sed -i "s/GREENBOOT_MAX_BOOT_ATTEMPTS=3/GREENBOOT_MAX_BOOT_ATTEMPTS=5/g" /etc/greenboot/greenboot.conf
 RUN sed -i 's#DISABLED_HEALTHCHECKS=()#DISABLED_HEALTHCHECKS=("01_repository_dns_check.sh" "not_exit.sh")#g' /etc/greenboot/greenboot.conf
 

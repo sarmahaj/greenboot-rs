@@ -226,6 +226,75 @@ jobs:
           timeout: 90
           secrets: "QUAY_USERNAME=${{ secrets.QUAY_USERNAME }};QUAY_PASSWORD=${{ secrets.QUAY_PASSWORD }};STAGE_REDHAT_IO_USERNAME=${{ secrets.STAGE_REDHAT_IO_USERNAME }};STAGE_REDHAT_IO_TOKEN=${{ secrets.STAGE_REDHAT_IO_TOKEN }};DOWNLOAD_NODE=${{ secrets.DOWNLOAD_NODE }}"
 
+  rhel-9-8-bootc:
+    needs: check-pull-request
+    if: ${{ needs.check-pull-request.outputs.allowed_user == 'true' }}
+    runs-on: ubuntu-latest
+    permissions:
+      statuses: write
+
+    steps:
+      - name: Run the tests
+        uses: sclorg/testing-farm-as-github-action@230555baceb860aa468d216f1822974836b965d1 # v4.3.1
+        with:
+          compose: RHEL-9.8.0-Nightly
+          api_key: ${{ secrets.TF_API_KEY }}
+          git_url: ${{ needs.check-pull-request.outputs.repo_url }}
+          git_ref: ${{ needs.check-pull-request.outputs.ref }}
+          update_pull_request_status: true
+          pull_request_status_name: rhel-9.8-bootc
+          tmt_context: "arch=x86_64;distro=rhel-9-8"
+          tmt_plan_regex: bootc
+          variables: "ARCH=x86_64;PR_NUMBER=${{ needs.check-pull-request.outputs.pr_number }}"
+          timeout: 90
+          secrets: "QUAY_USERNAME=${{ secrets.QUAY_USERNAME }};QUAY_PASSWORD=${{ secrets.QUAY_PASSWORD }};STAGE_REDHAT_IO_USERNAME=${{ secrets.STAGE_REDHAT_IO_USERNAME }};STAGE_REDHAT_IO_TOKEN=${{ secrets.STAGE_REDHAT_IO_TOKEN }};DOWNLOAD_NODE=${{ secrets.DOWNLOAD_NODE }}"
+
+  rhel-9-9-ostree:
+    needs: check-pull-request
+    if: ${{ needs.check-pull-request.outputs.allowed_user == 'true' }}
+    runs-on: ubuntu-latest
+    permissions:
+      statuses: write
+
+    steps:
+      - name: Run the tests
+        uses: sclorg/testing-farm-as-github-action@230555baceb860aa468d216f1822974836b965d1 # v4.3.1
+        with:
+          compose: RHEL-9.9.0-Nightly
+          api_key: ${{ secrets.TF_API_KEY }}
+          git_url: ${{ needs.check-pull-request.outputs.repo_url }}
+          git_ref: ${{ needs.check-pull-request.outputs.ref }}
+          update_pull_request_status: true
+          pull_request_status_name: rhel-9.9-ostree
+          tmt_context: "arch=x86_64;distro=rhel-9-9"
+          tmt_plan_regex: ostree
+          variables: "ARCH=x86_64;PR_NUMBER=${{ needs.check-pull-request.outputs.pr_number }}"
+          timeout: 90
+          secrets: "QUAY_USERNAME=${{ secrets.QUAY_USERNAME }};QUAY_PASSWORD=${{ secrets.QUAY_PASSWORD }};STAGE_REDHAT_IO_USERNAME=${{ secrets.STAGE_REDHAT_IO_USERNAME }};STAGE_REDHAT_IO_TOKEN=${{ secrets.STAGE_REDHAT_IO_TOKEN }};DOWNLOAD_NODE=${{ secrets.DOWNLOAD_NODE }}"
+
+  rhel-9-9-bootc:
+    needs: check-pull-request
+    if: ${{ needs.check-pull-request.outputs.allowed_user == 'true' }}
+    runs-on: ubuntu-latest
+    permissions:
+      statuses: write
+
+    steps:
+      - name: Run the tests
+        uses: sclorg/testing-farm-as-github-action@230555baceb860aa468d216f1822974836b965d1 # v4.3.1
+        with:
+          compose: RHEL-9.9.0-Nightly
+          api_key: ${{ secrets.TF_API_KEY }}
+          git_url: ${{ needs.check-pull-request.outputs.repo_url }}
+          git_ref: ${{ needs.check-pull-request.outputs.ref }}
+          update_pull_request_status: true
+          pull_request_status_name: rhel-9.9-bootc
+          tmt_context: "arch=x86_64;distro=rhel-9-9"
+          tmt_plan_regex: bootc
+          variables: "ARCH=x86_64;PR_NUMBER=${{ needs.check-pull-request.outputs.pr_number }}"
+          timeout: 90
+          secrets: "QUAY_USERNAME=${{ secrets.QUAY_USERNAME }};QUAY_PASSWORD=${{ secrets.QUAY_PASSWORD }};STAGE_REDHAT_IO_USERNAME=${{ secrets.STAGE_REDHAT_IO_USERNAME }};STAGE_REDHAT_IO_TOKEN=${{ secrets.STAGE_REDHAT_IO_TOKEN }};DOWNLOAD_NODE=${{ secrets.DOWNLOAD_NODE }}"
+
   rhel-10-2-bootc:
     needs: check-pull-request
     if: ${{ needs.check-pull-request.outputs.allowed_user == 'true' }}
@@ -244,6 +313,29 @@ jobs:
           update_pull_request_status: true
           pull_request_status_name: rhel-10.2-bootc
           tmt_context: "arch=x86_64;distro=rhel-10-2"
+          tmt_plan_regex: bootc
+          variables: "ARCH=x86_64;PR_NUMBER=${{ needs.check-pull-request.outputs.pr_number }}"
+          timeout: 90
+          secrets: "QUAY_USERNAME=${{ secrets.QUAY_USERNAME }};QUAY_PASSWORD=${{ secrets.QUAY_PASSWORD }};STAGE_REDHAT_IO_USERNAME=${{ secrets.STAGE_REDHAT_IO_USERNAME }};STAGE_REDHAT_IO_TOKEN=${{ secrets.STAGE_REDHAT_IO_TOKEN }};DOWNLOAD_NODE=${{ secrets.DOWNLOAD_NODE }}"
+
+  rhel-10-3-bootc:
+    needs: check-pull-request
+    if: ${{ needs.check-pull-request.outputs.allowed_user == 'true' }}
+    runs-on: ubuntu-latest
+    permissions:
+      statuses: write
+
+    steps:
+      - name: Run the tests
+        uses: sclorg/testing-farm-as-github-action@230555baceb860aa468d216f1822974836b965d1 # v4.3.1
+        with:
+          compose: RHEL-10.3-Nightly
+          api_key: ${{ secrets.TF_API_KEY }}
+          git_url: ${{ needs.check-pull-request.outputs.repo_url }}
+          git_ref: ${{ needs.check-pull-request.outputs.ref }}
+          update_pull_request_status: true
+          pull_request_status_name: rhel-10.3-bootc
+          tmt_context: "arch=x86_64;distro=rhel-10-3"
           tmt_plan_regex: bootc
           variables: "ARCH=x86_64;PR_NUMBER=${{ needs.check-pull-request.outputs.pr_number }}"
           timeout: 90
