@@ -332,6 +332,7 @@ sudo virt-install  --name="${TEST_UUID}-uefi"\
                    --os-variant ${OS_VARIANT} \
                    --cdrom "/var/lib/libvirt/images/install.iso" \
                    --boot ${BOOT_ARGS} \
+                   --tpm none \
                    --graphics none \
                    --serial file,path=${CONSOLE_LOG} \
                    --noautoconsole \
