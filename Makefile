@@ -10,6 +10,7 @@ PLATFORMS = $(shell (echo {x86_64,aarch64,powerpc64le,s390x}-unknown-linux-gnu))
 LLVM_COV ?= /usr/bin/llvm-cov
 LLVM_PROFDATA ?= /usr/bin/llvm-profdata
 COVERAGE_OUTPUT_DIR ?= tests/coverage
+COVERAGE_MIN = 75
 export PATH := $(HOME)/.cargo/bin:$(PATH)
 GREENBOOT_RUST_DEPENDENCIES = rust-anyhow+default-devel \
 				rust-clap+derive-devel \
@@ -106,9 +107,22 @@ test-coverage:
 	@echo "Running test coverage (results will be in $(COVERAGE_OUTPUT_DIR))..."
 	sudo PATH=$(HOME)/.cargo/bin:$$PATH LLVM_COV=$(LLVM_COV) LLVM_PROFDATA=$(LLVM_PROFDATA) cargo llvm-cov test -- --test-threads=1; \
 	test_exit=$$?; \
-	sudo PATH=$(HOME)/.cargo/bin:$$PATH LLVM_COV=$(LLVM_COV) LLVM_PROFDATA=$(LLVM_PROFDATA) cargo llvm-cov report --html --output-dir $(COVERAGE_OUTPUT_DIR)
-	sudo chmod -R 777 $(COVERAGE_OUTPUT_DIR)
-	@echo "Coverage report generated at $(COVERAGE_OUTPUT_DIR)/html/index.html"
+	sudo PATH=$(HOME)/.cargo/bin:$$PATH LLVM_COV=$(LLVM_COV) LLVM_PROFDATA=$(LLVM_PROFDATA) cargo llvm-cov report --html --output-dir $(COVERAGE_OUTPUT_DIR); \
+	sudo PATH=$(HOME)/.cargo/bin:$$PATH LLVM_COV=$(LLVM_COV) LLVM_PROFDATA=$(LLVM_PROFDATA) cargo llvm-cov report --lcov --output-path $(COVERAGE_OUTPUT_DIR)/lcov.info; \
+	sudo chmod -R a+rX $(COVERAGE_OUTPUT_DIR); \
+	echo "Coverage report generated at $(COVERAGE_OUTPUT_DIR)/html/index.html"; \
+	echo "lcov report generated at $(COVERAGE_OUTPUT_DIR)/lcov.info"; \
+	exit $$test_exit
+
+.PHONY: test-coverage-check
+test-coverage-check: test-coverage
+	@awk -F: -v min=$(COVERAGE_MIN) \
+		'/^LF:/ {lf += $$2} /^LH:/ {lh += $$2} \
+		END { if (lf == 0) { print "ERROR: no line data in lcov report"; exit 1 }; \
+		      pct = 100 * lh / lf; \
+		      printf "Line coverage: %.2f%% (%d/%d lines), minimum %d%%\n", pct, lh, lf, min; \
+		      if (pct < min) { print "FAIL: coverage below minimum"; exit 1 } }' \
+		$(COVERAGE_OUTPUT_DIR)/lcov.info
 
 .PHONY: fmt
 fmt:
