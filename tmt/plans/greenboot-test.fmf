@@ -34,3 +34,8 @@ provision:
   environment+:
     TEST_CASE: fedora-iot-raw
 
+/legacy-trigger-compat:
+  summary: Test backward compatibility for legacy rollback trigger (released ≤ v0.16.4 to current)
+  environment+:
+    TEST_CASE: legacy-trigger-compat
+
