@@ -7,7 +7,7 @@
 %bcond bundled_rust_deps %{defined rhel}
 
 Name:		greenboot-rs
-Version:	0.16.4
+Version:	0.16.5
 Release:	0%{?dist}
 Summary:	Generic Health Check Framework for systemd
 # Aggregated license of statically linked dependencies as per %%cargo_license_summary
@@ -150,6 +150,10 @@ fi
 %{_unitdir}/greenboot-healthcheck.service.d/10-network-online.conf
 
 %changelog
+* Mon Oct 27 2026 Sarita Mahajan <sarmahaj@redhat.com> - 0.16.5
+- Added backward compatibility for legacy rollback trigger (v0.16.2)
+- Added CI test for legacy trigger upgrade path
+
 * Tue Aug 18 2026 Sayan Paul <saypaul@redhat.com> - 0.16.4
 - Fixed false warning on first time boot
 - Added detection of grub fallback on faulty kernel

@@ -4,10 +4,10 @@ use anyhow::{Context, Result, bail};
 use clap::{Parser, Subcommand, ValueEnum};
 use config::{Config, File, FileFormat};
 use greenboot::{
-    RollbackMode, get_boot_counter, get_fallback, get_next_deployment_id, handle_motd,
-    handle_reboot, handle_rollback, run_diagnostics, run_green, run_red, set_boot_counter,
-    set_boot_status, set_fallback, set_next_deployment_id, unset_boot_counter, unset_fallback,
-    unset_next_deployment_id,
+    RollbackMode, get_boot_counter, get_fallback, get_next_deployment_id, get_rollback_trigger,
+    handle_motd, handle_reboot, handle_rollback, run_diagnostics, run_green, run_red,
+    set_boot_counter, set_boot_status, set_fallback, set_next_deployment_id, unset_boot_counter,
+    unset_fallback, unset_next_deployment_id, unset_rollback_trigger,
 };
 use greenboot::{detect_os_deployment, get_booted_deployment_id, get_staged_deployment_id};
 use greenboot::{is_boot_rw, remount_boot_ro, remount_boot_rw};
@@ -361,10 +361,16 @@ fn health_check() -> Result<()> {
 
             if !container_mode {
                 with_boot_rw(|| set_boot_status(true))?;
-                // Unset next_deployment_id on successful health check
+                // Unset rollback triggers on successful health check
                 if get_next_deployment_id().unwrap_or(None).is_some() {
                     with_boot_rw(unset_next_deployment_id)
                         .unwrap_or_else(|e| log::error!("Failed to unset next-deployment-id: {e}"));
+                }
+                // Also unset legacy trigger (≤ v0.16.4 compatibility) if present
+                if get_rollback_trigger().unwrap_or(false) {
+                    with_boot_rw(unset_rollback_trigger).unwrap_or_else(|e| {
+                        log::error!("Failed to unset legacy rollback trigger: {e}")
+                    });
                 }
             }
 
@@ -397,35 +403,34 @@ fn health_check() -> Result<()> {
                     }
                     Some(_) => {
                         // Boot counter reached 0 (or negative) - check rollback trigger
-                        if get_next_deployment_id().unwrap_or(None).is_some() {
+                        // Check both new (greenboot_next_deployment_id) and legacy (greenboot_rollback_trigger) formats
+                        let has_new_trigger = get_next_deployment_id().unwrap_or(None).is_some();
+                        let has_legacy_trigger = get_rollback_trigger().unwrap_or(false);
+
+                        if has_legacy_trigger {
+                            log::info!(
+                                "Boot counter exhausted and legacy rollback trigger is set (greenboot_rollback_trigger=1) - initiating rollback for backward compatibility"
+                            );
+                        } else if has_new_trigger {
                             log::info!(
                                 "Boot counter exhausted and next-deployment-id is set - initiating rollback"
                             );
-                            match handle_rollback(RollbackMode::Normal) {
-                                Ok(()) => {
-                                    log::info!("Rollback successful");
-                                    with_boot_rw(|| {
-                                        unset_boot_counter()?;
-                                        unset_next_deployment_id()?;
-                                        Ok(())
-                                    })
-                                    .unwrap_or_else(|e| {
-                                        log::error!("Failed to clear grub vars: {e}")
-                                    });
-                                    handle_reboot(true)
-                                        .unwrap_or_else(|e| log::error!("cannot reboot: {e}"));
-                                }
-                                Err(rollback_err) => {
-                                    log::error!("Rollback failed: {rollback_err}");
-                                    bail!("Manual intervention required - rollback failed");
-                                }
-                            }
                         } else {
                             log::warn!(
-                                "Boot counter exhausted but no next-deployment-id set - manual intervention required"
+                                "Boot counter exhausted but no rollback trigger set (neither greenboot_next_deployment_id nor greenboot_rollback_trigger) - manual intervention required"
                             );
                             bail!("Manual intervention required - no rollback trigger");
                         }
+
+                        handle_rollback(RollbackMode::Normal)
+                            .context("Manual intervention required - rollback failed")?;
+                        log::info!("Rollback successful");
+                        with_boot_rw(|| {
+                            unset_boot_counter()?;
+                            unset_next_deployment_id()?;
+                            unset_rollback_trigger()
+                        })?;
+                        handle_reboot(true)?;
                     }
                     None => {
                         // No boot counter set - this is the first failure, set it and reboot

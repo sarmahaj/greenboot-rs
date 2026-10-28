@@ -1,0 +1,39 @@
+---
+name: Legacy Trigger Compatibility Test
+
+on:
+  workflow_dispatch:
+    inputs:
+      compose:
+        description: "Fedora compose to test on"
+        required: true
+        default: "Fedora-44"
+        type: choice
+        options:
+          - Fedora-44
+          - Fedora-45
+  push:
+    tags:
+      - "v*"
+
+permissions: read-all
+
+jobs:
+  legacy-trigger-compat:
+    runs-on: ubuntu-latest
+    permissions:
+      statuses: write
+
+    steps:
+      - name: Run legacy trigger compatibility test
+        uses: sclorg/testing-farm-as-github-action@230555baceb860aa468d216f1822974836b965d1 # v4.3.1
+        with:
+          compose: ${{ github.event.inputs.compose || 'Fedora-44' }}
+          api_key: ${{ secrets.TF_API_PUB_KEY }}
+          git_url: ${{ github.server_url }}/${{ github.repository }}
+          git_ref: ${{ github.ref }}
+          tmt_context: "arch=x86_64;distro=fedora-44"
+          tmt_plan_regex: legacy-trigger-compat
+          variables: "ARCH=x86_64"
+          timeout: 90
+          secrets: "QUAY_USERNAME=${{ secrets.QUAY_USERNAME }};QUAY_PASSWORD=${{ secrets.QUAY_PASSWORD }};STAGE_REDHAT_IO_USERNAME=${{ secrets.STAGE_REDHAT_IO_USERNAME }};STAGE_REDHAT_IO_TOKEN=${{ secrets.STAGE_REDHAT_IO_TOKEN }};DOWNLOAD_NODE=${{ secrets.DOWNLOAD_NODE }}"

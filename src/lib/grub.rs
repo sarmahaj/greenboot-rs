@@ -136,6 +136,28 @@ fn get_next_deployment_id_at(grub_path: &str) -> Result<Option<String>> {
     get_grub_str_var("greenboot_next_deployment_id", grub_path)
 }
 
+/// Checks for the legacy greenboot_rollback_trigger variable (≤ v0.16.4).
+/// Returns true if set to "1", false otherwise.
+/// All released greenboot versions up to and including v0.16.4 wrote
+/// greenboot_rollback_trigger=1; main switched to greenboot_next_deployment_id
+/// in 9db9a1b (unreleased at time of writing).
+pub fn get_rollback_trigger() -> Result<bool> {
+    get_rollback_trigger_at(GRUB_PATH)
+}
+
+fn get_rollback_trigger_at(grub_path: &str) -> Result<bool> {
+    get_grub_bool_var("greenboot_rollback_trigger", grub_path)
+}
+
+/// unsets greenboot_rollback_trigger
+pub fn unset_rollback_trigger() -> Result<()> {
+    unset_rollback_trigger_at(GRUB_PATH)
+}
+
+fn unset_rollback_trigger_at(grub_path: &str) -> Result<()> {
+    unset_grub_var("greenboot_rollback_trigger", grub_path)
+}
+
 fn get_grub_bool_var(key: &str, grub_path: &str) -> Result<bool> {
     let grub_vars = Command::new("grub2-editenv")
         .arg(grub_path)
@@ -240,9 +262,9 @@ fn get_grub_str_var(key: &str, grub_path: &str) -> Result<Option<String>> {
 #[cfg(test)]
 mod tests {
     use super::{
-        get_boot_counter_at, get_fallback_at, get_next_deployment_id_at, set_boot_counter_at,
-        set_fallback_at, set_next_deployment_id_at, unset_boot_counter_at, unset_fallback_at,
-        unset_next_deployment_id_at,
+        get_boot_counter_at, get_fallback_at, get_next_deployment_id_at, get_rollback_trigger_at,
+        set_boot_counter_at, set_fallback_at, set_next_deployment_id_at, unset_boot_counter_at,
+        unset_fallback_at, unset_next_deployment_id_at, unset_rollback_trigger_at,
     };
     use anyhow::Context;
     use std::fs;
@@ -433,5 +455,46 @@ mod tests {
 
         unset_fallback_at(&grubenv).unwrap();
         assert!(!get_fallback_at(&grubenv).unwrap());
+    }
+
+    #[test]
+    fn test_legacy_rollback_trigger() {
+        let (_temp_dir, grubenv) = setup_test_paths();
+
+        // Legacy (≤ v0.16.4): greenboot_rollback_trigger=1
+        // New (post-v0.16.4, 9db9a1b): greenboot_next_deployment_id=<checksum>
+
+        // Default: not set, returns false
+        assert!(!get_rollback_trigger_at(&grubenv).unwrap());
+
+        // When set to 1, returns true (backward compatibility with v0.16.2)
+        let _ = Command::new("grub2-editenv")
+            .arg(&grubenv)
+            .arg("set")
+            .arg("greenboot_rollback_trigger=1")
+            .status()
+            .context("Cannot create grub variable greenboot_rollback_trigger");
+
+        assert!(get_rollback_trigger_at(&grubenv).unwrap());
+
+        // Can coexist with new trigger (upgrade scenario: released greenboot sets legacy, new checks both)
+        let id = "sha256:abc123def456";
+        set_next_deployment_id_at(id, &grubenv).unwrap();
+
+        assert!(get_rollback_trigger_at(&grubenv).unwrap());
+        assert_eq!(
+            get_next_deployment_id_at(&grubenv).unwrap(),
+            Some(id.to_string())
+        );
+
+        // Test unsetting the legacy trigger
+        unset_rollback_trigger_at(&grubenv).unwrap();
+        assert!(!get_rollback_trigger_at(&grubenv).unwrap());
+
+        // Verify new trigger is still set after unsetting legacy trigger
+        assert_eq!(
+            get_next_deployment_id_at(&grubenv).unwrap(),
+            Some(id.to_string())
+        );
     }
 }

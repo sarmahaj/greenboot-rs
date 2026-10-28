@@ -12,6 +12,8 @@ function run_tests() {
 		./greenboot-ostree.sh
 	elif [ "$TEST_CASE" = "fedora-iot-raw" ]; then
 		./greenboot-fedora-iot-raw.sh
+	elif [ "$TEST_CASE" = "legacy-trigger-compat" ]; then
+		./greenboot-legacy-trigger-compat.sh
 	else
 		echo "Error: Test case $TEST_CASE not found!"
 		exit 1
